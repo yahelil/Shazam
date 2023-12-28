@@ -12,7 +12,7 @@ class Spec:
     def __init__(self):
         self.file = "audio/elior.wav"
         self.S_db = None
-        self.BinerySpec = []
+        self.BinarySpec = []
 
     def scale(self):
         scale, sr = librosa.load(self.file)  # returns audio time series, sampling rate of scale
@@ -21,27 +21,12 @@ class Spec:
         # Creating a spectrogram out of the audio
         Y_scale = np.abs(S_scale) ** 2
         self.S_db = librosa.amplitude_to_db(Y_scale, ref=np.max)
+        Max, Min = self.max_spec(self.S_db)
         for line in self.S_db:
-            new_line = []
-            for x in line:
-                if -80.0 <= x <= -70.0:
-                    new_line.append(0)
-                elif -70.0 < x <= -60.0:
-                    new_line.append(0.15)
-                elif -60.0 < x <= -50.0:
-                    new_line.append(0.3)
-                elif -50.0 < x <= -40.0:
-                    new_line.append(0.45)
-                elif -40.0 < x <= -30.0:
-                    new_line.append(0.6)
-                elif -30.0 < x <= -20.0:
-                    new_line.append(0.75)
-                elif -20.0 < x <= -10.0:
-                    new_line.append(0.9)
-                else:
-                    new_line.append(1)
-            self.BinerySpec.append(new_line)
-        plt.imshow(self.BinerySpec, cmap=plt.get_cmap('gray'))
+            old_range = [Min, Max]
+            new_range = [0, 1]
+            self.BinarySpec.append([self.translate(x, old_range, new_range)for x in line])
+        plt.imshow(self.BinarySpec, cmap=plt.get_cmap('gray'))
         plt.axis('off')
         plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
         plt.show()
@@ -52,6 +37,19 @@ class Spec:
         plt.subplot(122), plt.imshow(blur), plt.title('Blurred')
         plt.xticks([]), plt.yticks([])
         plt.show()
+
+    @staticmethod
+    def max_spec(lst):
+        mymax = -80
+        mymin = 0
+        rows = len(lst)
+        col = len(lst[0])
+        for i in range(rows):
+            for j in range(col):
+                mymax = max(mymax, lst[i][j])
+                mymin = min(mymin, lst[i][j])
+        print(mymax, mymin)
+        return mymax, mymin
 
     @staticmethod
     def translate(value, src, dest):
