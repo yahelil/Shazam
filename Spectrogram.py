@@ -13,13 +13,16 @@ This file's job is to:
 2. Find the peaks in the spectrogram
 '''
 
-
+AVERAGES_UP = []
+AVERAGES_DOWN = []
+DatabaseList = ["PressStart"]
 FRAME_SIZE = 2048
 HOP_SIZE = 1000
 
 
 class Spec:
     def __init__(self, song: str):
+        self.name = song
         self.fmap = None
         self.tp_list = []
         self.fdhash = None
@@ -33,7 +36,8 @@ class Spec:
         self.peaks()
         self.hash()
         song_hash = self.search()
-        self.__init__("sample2")
+        #self.__init__("sample2")
+        self.__init__("test")
         self.spec()
         self.peaks()
         self.hash()
@@ -73,10 +77,12 @@ class Spec:
         rows, cols = len(self.PeaksSpec), len(self.PeaksSpec[0])
         x = []
         y = []
-        averages_up, averages_down = self.find_averages(self.PeaksSpec)
+        if self.name in DatabaseList:
+            self.save_averages(self.PeaksSpec)
+        print(AVERAGES_UP)
         for row in range(rows):
             for col in range(cols):
-                if self.PeaksSpec[row][col] > averages_up[int(col/256)]: #or 0.1 < self.PeaksSpec[row][col] < averages_down[int(col/256)]
+                if self.PeaksSpec[row][col] > AVERAGES_UP[int(col/256)]: #or 0.1 < self.PeaksSpec[row][col] < AVERAGES_DOWN[int(col/256)]
                     self.PeaksSpec[row][col] = 0.5
                     if row > 200:
                         x.append(col)
@@ -85,9 +91,9 @@ class Spec:
                 else:
                     self.PeaksSpec[row][col] = 0.0
         # # The spectrogram with peaks
-        # plt.imshow(self.PeaksSpec, cmap=plt.get_cmap('gray'))
-        # plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
-        # plt.show()
+        #plt.imshow(self.PeaksSpec, cmap=plt.get_cmap('gray'))
+        #plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
+        #plt.show()
 
     def hash(self):
         """ builds self.tp_list, self.fdhash and self.fmap """
@@ -104,6 +110,7 @@ class Spec:
                 length = math.dist(self.index[i], self.index[i-1])
                 TracePoint = tp(freq) if i == 0 else tp(freq, dv(length, math.degrees(math.asin(abs(next_freq-freq)/length))))
                 self.tp_list.append(TracePoint)
+                print(self.tp_list)
         self.fdhash = baas(self.tp_list)
         self.fmap = fm(self.fdhash)
         # plt.scatter(x, y, color="gray", s=5)
@@ -131,7 +138,7 @@ class Spec:
         success = 0
         for data in hash1:
             if count < len(hash2) - 1:
-                if math.isclose(data[0], hash2[count][0], abs_tol=65) and math.isclose(data[1], hash2[count][1], abs_tol=35):
+                if math.isclose(data[0], hash2[total][0], abs_tol=70) and math.isclose(data[1], hash2[total][1], abs_tol=40):
                     success += 1
                 if success != 0:
                     total += 1
@@ -151,13 +158,16 @@ class Spec:
         valueScaled = float(value - src[0]) / float(srcSpan)
         return dest[0] + (valueScaled * destSpan)
 
-    @staticmethod
-    def find_averages(lst):
+
+    def save_averages(self, lst):
         """
         note - This function is dividing the list into windows and works with each separately
         :param lst: The list of values in the spectrogram
-        :return: The average between the average of the window to max number and to the min number
+        :saves: saves The average between average of the window to max num min num to AVERAGES_UP and DOWN
         """
+
+        global AVERAGES_UP, AVERAGES_DOWN
+
         arr = np.array(lst)
         max_value, min_value = np.max(arr), np.min(arr)
         length = len(arr[0])
@@ -176,7 +186,9 @@ class Spec:
             jump = next_jump
             average_list_up.append(average_up)
             average_list_down.append(average_down)
-        return average_list_up, average_down
+        AVERAGES_UP = average_list_up
+        AVERAGES_DOWN = average_list_down
+        #return average_list_up, average_list_down
 
 
 if __name__ == "__main__":
