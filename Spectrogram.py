@@ -4,8 +4,8 @@ import librosa
 import librosa.display
 import numpy as np
 import matplotlib.pyplot as plt
-from Hash import build_and_add_signature as baas, TracePoint as tp, \
-    DirectionVector as dv, FrequencyMap as fm, find_in_hash as fih
+from Hash import build_and_add_signature, TracePoint as tp, \
+    DirectionVector, FrequencyMap as fm, find_in_hash, FrequencyDirectionHash
 
 '''
 This file's job is to:
@@ -13,162 +13,34 @@ This file's job is to:
 2. Find the peaks in the spectrogram
 '''
 
-AVERAGES_UP = []
-AVERAGES_DOWN = []
+SDB = []
 DatabaseList = ["PressStart"]
 FRAME_SIZE = 2048
 HOP_SIZE = 1000
 
 
-class Spec:
-    def __init__(self, song: str):
-        self.name = song
-        self.fmap = None
-        self.tp_list = []
-        self.fdhash = None
-        self.file = f"database/{song}.wav"
-        self.S_db = None
-        self.PeaksSpec = []
+class Measures:
+    def __init__(self, peaks_spec):
+        self.AVERAGES_UP = []
+        self.AVERAGES_DOWN = []
         self.index = []
+        self.peaks_spec = peaks_spec
+        self.old_range = None
+        self.new_range = None
 
-    def run(self):
-        self.spec()
-        self.peaks()
-        self.hash()
-        song_hash = self.search()
-        #self.__init__("sample2")
-        self.__init__("test")
-        self.spec()
-        self.peaks()
-        self.hash()
-        sample_hash = self.search()
-        print(f"song_hash: {song_hash}\n sample_hash: {sample_hash}")
-        self.match(song_hash, sample_hash)
+    def generateNormalizeTransformParams(self, s_db):
+        Max, Min = np.amax(s_db), np.amin(s_db)
+        self.old_range = [Min, Max]
+        self.new_range = [0, 1]
 
-    def spec(self):
-        """This function presents the spectrogram of the file after the transformation(fft)"""
-
-        # generate spectrogram
-        scale, sr = librosa.load(self.file)  # returns audio time series, sampling rate of scale
-        S_scale = librosa.stft(scale, n_fft=FRAME_SIZE, hop_length=HOP_SIZE)
-
-        # Creating a spectrogram out of the audio
-        Y_scale = np.abs(S_scale) ** 2
-        self.S_db = librosa.amplitude_to_db(Y_scale, ref=np.max)
-        Max, Min = np.amax(self.S_db), np.amin(self.S_db)
-        old_range = [Min, Max]
-        new_range = [0, 1]
-        for line in self.S_db:   # loop to create self.PeaksSpec
-            self.PeaksSpec.append([self.translate(x, old_range, new_range)for x in line])
-        rows, cols = len(self.PeaksSpec), len(self.PeaksSpec[0])
-        for row in range(rows):
-            for col in range(cols):
-                if row < 200:
-                    self.PeaksSpec[row][col] = 0.0
-        # # Just the spectrogram
-        # plt.imshow(self.PeaksSpec, cmap=plt.get_cmap('gray'))
-        # plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
-        # plt.show()
-
-    def peaks(self):
-        """ In this function all the peaks are presented on top of the spectrogram"""
-
-        # seeking peaks
-        rows, cols = len(self.PeaksSpec), len(self.PeaksSpec[0])
-        x = []
-        y = []
-        if self.name in DatabaseList:
-            self.save_averages(self.PeaksSpec)
-        print(AVERAGES_UP)
-        for row in range(rows):
-            for col in range(cols):
-                if self.PeaksSpec[row][col] > AVERAGES_UP[int(col/256)]: #or 0.1 < self.PeaksSpec[row][col] < AVERAGES_DOWN[int(col/256)]
-                    self.PeaksSpec[row][col] = 0.5
-                    if row > 200:
-                        x.append(col)
-                        y.append(row)
-                        self.index.append((col, row))
-                else:
-                    self.PeaksSpec[row][col] = 0.0
-        # # The spectrogram with peaks
-        #plt.imshow(self.PeaksSpec, cmap=plt.get_cmap('gray'))
-        #plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
-        #plt.show()
-
-    def hash(self):
-        """ builds self.tp_list, self.fdhash and self.fmap """
-        x = []
-        y = []
-        for i in range(len(self.index)):
-            freq = self.index[i][1]
-            next_freq = self.index[i-1][1]
-            #print(f"freq: {freq}, next: {next_freq}")
-            if abs(freq - next_freq) >= 1:
-                x.append(self.index[i][0])
-                y.append(freq)
-                #print(f"after:\nfreq: {freq}, next: {next_freq}")
-                length = math.dist(self.index[i], self.index[i-1])
-                TracePoint = tp(freq) if i == 0 else tp(freq, dv(length, math.degrees(math.asin(abs(next_freq-freq)/length))))
-                self.tp_list.append(TracePoint)
-                print(self.tp_list)
-        self.fdhash = baas(self.tp_list)
-        self.fmap = fm(self.fdhash)
-        # plt.scatter(x, y, color="gray", s=5)
-        # plt.show()
-        # print(f"tp_list: {self.tp_list}, fdhash: {self.fdhash}, fmap: {self.fmap}")
-
-    def search(self):
-        """
-        :return: the hash of the song/sample
-        """
-        hash = []
-        for tp in self.tp_list:
-            hash.append(fih(self.fdhash, self.fmap.frequencies, tp))
-        return hash
-
-    @staticmethod
-    def match(hash1, hash2):
-        '''
-        :param: hash1 - song_hash
-        :param: hash2 - sample_hash
-        :return: Percentage of match
-        '''
-        count = 0
-        total = 0
-        success = 0
-        for data in hash1:
-            if count < len(hash2) - 1:
-                if math.isclose(data[0], hash2[total][0], abs_tol=70) and math.isclose(data[1], hash2[total][1], abs_tol=40):
-                    success += 1
-                if success != 0:
-                    total += 1
-                count += 1
-        print(f"The match percentage is {(success/total)*100}%")
-
-    @staticmethod
-    def translate(value, src, dest):
-        """
-        :param value: an element in S_db
-        :param src: The range to list used to be
-        :param dest: The range we want the list to be
-        :return: The value in the same ratio but in the new range
-        """
-        srcSpan = src[1] - src[0]
-        destSpan = dest[1] - dest[0]
-        valueScaled = float(value - src[0]) / float(srcSpan)
-        return dest[0] + (valueScaled * destSpan)
-
-
-    def save_averages(self, lst):
+    def save_averages(self):
         """
         note - This function is dividing the list into windows and works with each separately
         :param lst: The list of values in the spectrogram
         :saves: saves The average between average of the window to max num min num to AVERAGES_UP and DOWN
         """
 
-        global AVERAGES_UP, AVERAGES_DOWN
-
-        arr = np.array(lst)
+        arr = np.array(self.peaks_spec)
         max_value, min_value = np.max(arr), np.min(arr)
         length = len(arr[0])
         windows = int(length / 256)
@@ -186,15 +58,296 @@ class Spec:
             jump = next_jump
             average_list_up.append(average_up)
             average_list_down.append(average_down)
-        AVERAGES_UP = average_list_up
-        AVERAGES_DOWN = average_list_down
-        #return average_list_up, average_list_down
+        self.AVERAGES_UP = average_list_up
+        self.AVERAGES_DOWN = average_list_down
+        # return average_list_up, average_list_down
+
+    # def peaks(self):
+    #     """ In this function all the peaks are presented on top of the spectrogram"""
+    #
+    #     rows, cols = len(self.peaks_spec), len(self.peaks_spec[0])
+    #     for row in range(rows):
+    #         for col in range(cols):
+    #             if self.peaks_spec[row][col] > self.AVERAGES_UP[1]: #or 0.1 < self.peaks_spec[row][col] < AVERAGES_DOWN[int(col/256)]
+    #                 self.peaks_spec[row][col] = 0.5
+    #                 if row > 200:
+    #                     self.index.append((col, row))
+    #             else:
+    #                 self.peaks_spec[row][col] = 0.0
+
+
+class Spec:
+    def __init__(self, song: str):
+        self.name = song
+        self.fmap = None
+        self.tp_list = []
+        self.FrequencyDirectionHash = None
+        self.file = f"{song}.wav"
+        self.S_db = None
+        self.peaks_spec = []
+        self.index = []
+        self.indices_list = []
+        self.best_match = 0
+        self.measures = None
+
+    def run(self, fname, measures=None):
+        if measures:
+            self.SpecBeforeNormilizing("sample_DB.csv")
+        else:
+            self.SpecBeforeNormilizing()
+
+        require_normalization = False
+        if measures is None:
+            require_normalization = True
+            measures = Measures(self.peaks_spec)
+            measures.generateNormalizeTransformParams(self.S_db)
+
+        self.normalizingSpec(measures.old_range, measures.new_range)
+        if require_normalization:
+            measures.save_averages()
+
+        self.peaks(measures)
+        self.hash(fname)
+
+        return measures
+
+    def compare(self, other):
+        sample_hash = self.search()
+        song_hash = other.search()
+        print(f"song_hash: {song_hash.__str__()}\n sample_hash: {sample_hash.__str__()}")
+        self.match(sample_hash, song_hash, other.fmap)
+
+    def normalizingSpec(self, old_range, new_range):
+        for line in self.S_db:  # loop to create self.peaks_spec
+            self.peaks_spec.append([self.translate(x, old_range, new_range) for x in line])
+        rows, cols = len(self.peaks_spec), len(self.peaks_spec[0])
+        for row in range(rows):
+            for col in range(cols):
+                if row < 200:
+                    self.peaks_spec[row][col] = 0.0
+
+    def SpecBeforeNormilizing(self, fname = "S_DB.csv"):
+        """This function presents the spectrogram of the file after the transformation(fft)"""
+        # global SDB
+        # generate spectrogram
+        scale, sr = librosa.load(self.file)  # returns audio time series, sampling rate of scale
+        if fname !=  "S_DB.csv":
+            scale = scale[6000:sr*2+6000]
+        else:
+            scale = scale[:sr*4]
+        S_scale = librosa.stft(scale, n_fft=FRAME_SIZE, hop_length=HOP_SIZE)
+
+        # Creating a spectrogram out of the audio
+        Y_scale = np.power(np.abs(S_scale), 2)
+        self.S_db = librosa.amplitude_to_db(Y_scale, ref=np.max)
+        file = open(fname, "w")
+        for x in self.S_db:
+            comma = ""
+            for y in x:
+                if comma == "":
+                    file.write("\n")
+                file.write(f"{comma} {y}")
+                comma = ","
+        file.close()
+        # if self.name in DatabaseList:
+        #     SDB = self.S_db
+        # else:
+        #     self.S_db = SDB
+        # # Just the spectrogram
+        # plt.imshow(self.peaks_spec, cmap=plt.get_cmap('gray'))
+        # plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
+        # plt.show()
+
+    def peaks(self, measures):
+        """ In this function all the peaks are presented on top of the spectrogram"""
+        rows, cols = len(self.peaks_spec), len(self.peaks_spec[0])
+        for col in range(cols):
+            for row in range(rows):
+                if self.peaks_spec[row][col] > measures.AVERAGES_UP[
+                    0]:  # or 0.1 < self.peaks_spec[row][col] < AVERAGES_DOWN[int(col/256)]
+                    self.peaks_spec[row][col] = 0.5
+                    if row > 200:
+                        self.index.append((col, row))
+                else:
+                    self.peaks_spec[row][col] = 0.0
+        '''if self.name == "PressStart":
+            print("gg")
+            INDEXSONG = self.index'''
+        # # The spectrogram with peaks
+        # plt.imshow(self.peaks_spec, cmap=plt.get_cmap('gray'))
+        # plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
+        # plt.show()
+
+    def hash(self, fname):
+        """ builds self.tp_list, self.FrequencyDirectionHashash and self.fmap """
+        last_tp = None
+        dirvec = None
+
+        f = open(fname, "w")
+        for i in range(len(self.index)):
+            freq = self.index[i][1]
+            time = self.index[i][0]
+            if i == 0:
+                last_tp = tp(freq)
+                self.tp_list.append(last_tp)
+            else:
+                prev_time = self.index[i - 1][0]
+                prev_freq = self.index[i - 1][1]
+                #if abs(time - prev_time) >= 1:
+                length = math.dist(self.index[i], self.index[i - 1])
+                dirvec = DirectionVector(length, math.degrees(math.asin((freq - prev_freq) / length)))
+                TracePoint = tp(freq)
+                last_tp.follow = TracePoint
+                last_tp.direction_vector = dirvec
+                self.tp_list.append(TracePoint)
+                if last_tp.direction_vector is not None:
+                    f.write(f"{last_tp.frequency},{last_tp.direction_vector.angle}, {last_tp.direction_vector.length}\n")
+                last_tp = TracePoint
+
+        f.close()
+        last_tp.direction_vector = dirvec
+        '''for tpt in self.tp_list:
+            print(tpt.__str__())'''
+        if self.name in DatabaseList:
+            self.FrequencyDirectionHash = build_and_add_signature(self.tp_list)
+            self.fmap = fm(self.FrequencyDirectionHash).frequencies
+        # plt.scatter(x, y, color="gray", s=5)
+        # plt.show()
+        # print(f"tp_list: {self.tp_list}, FrequencyDirectionHashash: {self.FrequencyDirectionHashash}, fmap: {self.fmap}")
+
+    def search(self):
+        """
+        :return: the hash of the song/sample
+        """
+        if self.name not in DatabaseList:
+            return self.tp_list
+        song_hash = FrequencyDirectionHash()
+        for tp in self.tp_list:
+            song_hash.add(tp)
+        return song_hash
+
+    def indices(self, list1, list2):
+        index = 1
+        for t in list1[1:]:
+            if math.isclose(t[0], list2[1][0], abs_tol=10) and math.isclose(t[1], list2[1][1], abs_tol=5):
+                self.indices_list.append(index)
+            index += 1
+
+    def match(self, tp_sample, hash_song, song_fmap):
+        # list2 = list1[100:200]
+        # self.indices(list1, list2)
+
+        current_tp = tp_sample[0]  # The starting tp
+        tp_list = find_in_hash(hash_song, song_fmap, current_tp)
+        # tp_sample = []
+        # p = tp_list[0]
+        # for i in range(200):
+        #     tp_sample.append(p)
+        #     p = p.follow
+        self.best_match = 0
+        winner_tp_song = None
+        for tp_song in tp_list:
+            matches = 0
+            total = 0
+            current_tp = tp_sample[0]
+            starter = tp_song
+            while current_tp is not None and tp_song is not None:  # not the last tp
+                total += 1
+                if current_tp == tp_song:
+                    matches += 1
+                current_tp = current_tp.follow
+                tp_song = tp_song.follow
+                # if total == 20:
+                #     break
+            if total > 0 and self.best_match < (matches/total) * 100:
+                self.best_match = (matches/total) * 100
+                winner_tp_song = starter
+            print(f"The match percentage is { (matches/total) * 100 }%")
+
+        print(f"The best match percentage is { self.best_match }%")
+        file = open("tp_sample.csv", "w")
+        file_song = open("tp_song.csv", "w")
+        tp = tp_sample[0]
+        tp_song = winner_tp_song
+        while tp is not None and tp_song is not None:
+            file.write(f"{tp.frequency},{tp.direction_vector.angle}, {tp.direction_vector.length}\n")
+            tp = tp.follow
+            file_song.write(f"{tp_song.frequency},{tp_song.direction_vector.angle}, {tp_song.direction_vector.length}\n")
+            tp_song = tp_song.follow
+        # print(f"indices: {self.indices_list}")
+        # total = 0
+        # for index in self.indices_list:
+        #     success = 0
+        #     total = 0
+        #     tp_src = list1[index]
+        #     tp_dst = list2[1]
+        #     for tuples in zip(list1[index:], list2[1:]):
+        #         if math.isclose(tuples[0][0], tuples[1][0], abs_tol=10) and math.isclose(tuples[0][1], tuples[1][1],
+        #                                                                                  abs_tol=5):
+        #             success += 1
+        #         total += 1
+        #     match = success / total * 100
+        #     if self.best_match < match:
+        #         self.best_match = match
+        #         print(f"index = {index}\nsuccess = {success}\ntotal = {total}\n")
+        #     self.best_match = max(self.best_match, match)
+        # if total == 0:
+        #     print(f"The match percentage is 0%")
+        # else:
+        #     print(f"The match percentage is {self.best_match}%")
+
+    @staticmethod
+    def translate(value, src, dest):
+        """
+        :param value: an element in S_db
+        :param src: The range to list used to be
+        :param dest: The range we want the list to be
+        :return: The value in the same ratio but in the new range
+        """
+        srcSpan = src[1] - src[0]
+        destSpan = dest[1] - dest[0]
+        valueScaled = float(value - src[0]) / float(srcSpan)
+        return dest[0] + (valueScaled * destSpan)
+
+    # @staticmethod
+    # def save_averages(lst):
+    #     """
+    #     note - This function is dividing the list into windows and works with each separately
+    #     :param lst: The list of values in the spectrogram
+    #     :saves: saves The average between average of the window to max num min num to AVERAGES_UP and DOWN
+    #     """
+    #
+    #
+    #     arr = np.array(lst)
+    #     max_value, min_value = np.max(arr), np.min(arr)
+    #     length = len(arr[0])
+    #     windows = int(length / 256)
+    #     average_list_up = []
+    #     average_list_down = []
+    #     if length % 256 != 0:
+    #         windows = windows + 1
+    #     jump = 0
+    #     next_jump = 0
+    #     for i in range(windows):
+    #         next_jump += 256
+    #         average = np.mean(arr[jump:(length if (windows - 1) else next_jump)])
+    #         average_up = statistics.mean([average, max_value])
+    #         average_down = statistics.mean([average, min_value])
+    #         jump = next_jump
+    #         average_list_up.append(average_up)
+    #         average_list_down.append(average_down)
+    #     AVERAGES_UP = average_list_up
+    #     AVERAGES_DOWN = average_list_down
+    #     # return average_list_up, average_list_down
 
 
 if __name__ == "__main__":
-    p = Spec("PressStart")
-    p.run()
+    p1 = Spec("PressStart")
+    measures = p1.run("song.csv")
+
+    p2 = Spec("‏‏PressStartCopy") # "PressStartEdit")
+    p2.run("sample.csv", measures)
+
+    p2.compare(p1)
     # g = Spec("Symbolism")
     # g.run()
-
-
