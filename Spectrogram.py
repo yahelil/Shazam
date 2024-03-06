@@ -95,7 +95,7 @@ class Spec:
         self.fmap = None
         self.tp_list = []
         self.FrequencyDirectionHash = None
-        self.file = f"{song}.wav"
+        self.file = f"database/{song}.wav"
         self.S_db_list = []
         self.peaks_spec_list = []
         self.index = []
