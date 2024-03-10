@@ -1,9 +1,15 @@
+import math
 from collections import defaultdict
+import numpy as np
 '''
 This file's job is to:
 1. Creat a hash of all the trace points in the database
-2. Allow to search for similar trace points in the hash
+    2. Allow to search for similar trace points in the hash
 '''
+
+
+class Constants:
+    common_delta = 2
 
 
 class DirectionVector:
@@ -14,6 +20,9 @@ class DirectionVector:
         """
         self.length = length
         self.angle = angle
+
+    def __str__(self):
+        print(f"length: {self.length}, angle: {self.angle}")
 
 
 class TracePoint:
@@ -33,7 +42,13 @@ class TracePoint:
         self.direction_vector = direction_vector
 
     def __str__(self):
-        print(f"freq: {self.frequency}, vector: {self.direction_vector}")
+        return f"freq: {self.frequency}, vector: {self.direction_vector.angle if self.direction_vector is not None else 'None'}"
+
+    def __repr__(self):
+        return f"freq: {self.frequency}, vector: {self.direction_vector.angle if self.direction_vector is not None else 'None'}"
+
+    def __eq__(self, other):
+        return math.isclose(self.frequency, other.frequency, abs_tol=Constants.common_delta) and math.isclose(self.direction_vector.angle, other.direction_vector.angle, abs_tol=Constants.common_delta)
 
 
 class FrequencyDirectionHash:
@@ -43,55 +58,78 @@ class FrequencyDirectionHash:
         """
         self.h = defaultdict(dict)
 
+    def __str__(self):
+        return self.h
+
     def add(self, trace_point: TracePoint):
         """
         :param trace_point: A given trace point
         :The function adds the trace point that was given to the has (self.h):
         """
-        if trace_point.frequency not in self.h or not trace_point.direction_vector or trace_point.direction_vector.angle not in self.h[trace_point.frequency]:
-            if trace_point.direction_vector is None:
-                self.h[trace_point.frequency][None] = [trace_point]
-            else:
-                self.h[trace_point.frequency][trace_point.direction_vector.angle] = [trace_point]
+        freq = round(trace_point.frequency)
+        if trace_point.direction_vector is not None:
+            angle = round(trace_point.direction_vector.angle)
         else:
+            angle = None
 
-            if trace_point.direction_vector is None:
-                self.h[trace_point.frequency][None].append(trace_point)
-            else:
-                self.h[trace_point.frequency][trace_point.direction_vector.angle].append(trace_point)
+        if freq not in self.h:
+            self.h[freq] = {}
+
+        if angle not in self.h[freq]:
+            # if angle is None:
+            #     self.h[freq][None] = [trace_point]
+            # else:
+            self.h[freq][angle] = [trace_point]
+        else:
+            self.h[freq][angle].append(trace_point)
+
+    def get_closest_freq(self, freq, delta, dirvec, angle=None):
+        #(f"closest -------------------- freq = {freq}")
+        freq = round(freq)
+        lst = []
+        angle = round(angle)
+        for i in range(freq-delta, freq+delta+1):
+            if i in self.h:
+                for j in range(angle-delta, angle+delta+1):
+                    if j in self.h[i]:
+                        for tp in self.h[i][j]:
+                            if math.fabs(dirvec.length-tp.direction_vector.length) < Constants.common_delta:
+                                lst.append(tp)
+        return lst
 
 
 class FrequencyMap:
     def __init__(self, fdhash: FrequencyDirectionHash):
         '''
         :param fdhash: The whole hash
-        :frequencies ends as a sorted list of all the frequencies in fdhash:
+        :frequencies ends as a list of all the frequencies in fdhash:
         '''
         self.frequencies = []
-        for freq in fdhash.h:
+        for freq in list(fdhash.h.keys()):
             self.frequencies.append(freq)
-        self.frequencies.sort()
 
 
 class AngleMap:
     def __init__(self, fdhash: dict):
         """
         :param fdhash: The whole hash
-        :frequencies ends as a sorted list of all the frequencies in fdhash:
+        :frequencies ends as a list of all the frequencies in fdhash:
         """
         self.angles = []
         for angle in fdhash:
-            self.angles.append(angle)
-        self.angles.sort()
+            if angle is not None:
+                self.angles.append(angle)
 
 
-def build_and_add_signature(tp_list):
+def build_and_add_signature(fdhash: FrequencyDirectionHash, tp_list):
     """
     :builds an object of FrequencyDirectionHash:
     :return the object:
     """
-    fdhash = FrequencyDirectionHash()
     for tp in tp_list:
+        if tp.direction_vector is None:
+            continue
+
         fdhash.add(tp)
 
     return fdhash
@@ -115,41 +153,39 @@ def build_and_add_signature_tmp():
     return fdhash
 
 
-def find_in_hash(fdhash: FrequencyDirectionHash, fmap_frequencies: list, tp: TracePoint) -> tuple:
+def find_in_hash(fdhash: FrequencyDirectionHash, fmap_frequencies: list, tp: TracePoint) -> list:
     """
     :searches through the fmap (sorted frequencies):
     :if the position is bigger then the frequency it returns the closest frequency (the last or next position):
     :note - fdhash is here in case I want to return the value of the angle and not the angle itself:
     :param fdhash: The hash of the original song
-    :param fmap_frequencies: list of sorted frequencies
+    :param fmap_frequencies: list of frequencies
     :param tp: The trace point from the sample we are comparing to
-    :return: A tuple of the closest frequencyand angle
+    :return: list of all the tp that can be the start
     """
     freq = tp.frequency
-    for i in range(len(fmap_frequencies)):
-        if fmap_frequencies[i] == freq:
-            freq = fmap_frequencies[i]
-            break
-        elif fmap_frequencies[i] > freq:
-            if abs(fmap_frequencies[i] - freq) < abs(freq - fmap_frequencies[i-1]):  # if difference from the next is smaller than from the prev
-                freq = fmap_frequencies[i]
-                break
-            else:  # if difference from the prev is smaller than from the next
-                freq = fmap_frequencies[i-1]
-                break
-    if tp.direction_vector is None:
-        return freq, 0
+    minfreq = fmap_frequencies[np.absolute(np.asarray(fmap_frequencies) - freq).argmin()]
+
     angle = tp.direction_vector.angle
-    amap = AngleMap(fdhash.h[freq]).angles
-    for i in range(len(amap)):
-        if amap[i] == angle:
-            return freq, amap[i]
-        elif amap[i] > angle:
-            if abs(amap[i] - angle) < abs(angle - amap[i-1]):  # if difference from the next is smaller than from the prev
-                return freq, amap[i]
-            else:  # if difference from the prev is smaller than from the next
-                return freq, amap[i-1]
-    return -1000, -180
+    amap = list(fdhash.h[minfreq].keys())
+    if not amap:
+        return amap
+    minangle = amap[np.absolute(np.asarray(amap) - angle).argmin()]
+    lst = fdhash.get_closest_freq(minfreq, Constants.common_delta, tp.direction_vector, minangle)
+
+    if round(angle) != minangle and (2*angle - minangle) in fdhash.h[minfreq]:
+        lst += fdhash.get_closest_freq(minfreq, Constants.common_delta, tp.direction_vector, (2*angle - minangle))
+
+    if round(freq) != minfreq and 2*freq-minfreq in fmap_frequencies:
+        minfreq_opposite = 2*freq-minfreq
+
+        amap = list(fdhash.h[minfreq_opposite].keys())
+        minangle = amap[np.absolute(np.asarray(amap) - angle).argmin()]
+        lst += fdhash.get_closest_freq(minfreq_opposite, Constants.common_delta, tp.direction_vector, minangle)
+
+        if round(angle) != minangle and (2 * angle - minangle) in fdhash.h[minfreq]:
+            lst += fdhash.get_closest_freq(minfreq_opposite, Constants.common_delta, tp.direction_vector, (2 * angle - minangle))
+    return lst
 
 
 def main():

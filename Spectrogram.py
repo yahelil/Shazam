@@ -93,21 +93,21 @@ class Spec:
     def __init__(self, song: str):
         self.name = song
         self.fmap = None
-        self.tp_list = []
-        self.FrequencyDirectionHash = None
+        self.tp_lists_list = []
+        self.FrequencyDirectionHash = FrequencyDirectionHash()
         self.file = f"database/{song}.wav"
         self.S_db_list = []
         self.peaks_spec_list = []
-        self.index = []
+        self.index_list = []
         self.indices_list = []
         self.best_match = 0
         self.measures = None
 
     def run(self, fname, measures=None):
         if measures:
-            self.SpecBeforeNormilizing("sample_DB.csv")
+            self.spec_before_normalizing("sample_DB.csv")
         else:
-            self.SpecBeforeNormilizing()
+            self.spec_before_normalizing()
 
         require_normalization = False
         if measures is None:
@@ -115,7 +115,7 @@ class Spec:
             measures = Measures(self.peaks_spec_list)
             measures.generateNormalizeTransformParams(self.S_db_list)
 
-        self.normalizingSpec(measures.old_range, measures.new_range)
+        self.normalizing_spec(measures.old_range, measures.new_range)
         if require_normalization:
             measures.save_averages()
 
@@ -127,10 +127,10 @@ class Spec:
     def compare(self, other):
         sample_hash = self.search()
         song_hash = other.search()
-        print(f"song_hash: {song_hash.__str__()}\n sample_hash: {sample_hash.__str__()}")
-        self.match(sample_hash, song_hash, other.fmap)
+        #print(f"song_hash: {song_hash.__str__()}\n sample_hash: {sample_hash.__str__()}")
+        self.match_matches(sample_hash, song_hash, other.fmap)
 
-    def normalizingSpec(self, old_range, new_range):
+    def normalizing_spec(self, old_range, new_range):
         for S_db in self.S_db_list:
             peaks_spec = []
             for line in S_db:  # loop to create self.peaks_spec
@@ -142,24 +142,28 @@ class Spec:
                         peaks_spec[row][col] = 0.0
             self.peaks_spec_list.append(peaks_spec)
 
-
-    def SpecBeforeNormilizing(self, fname="S_DB.csv"):
+    def spec_before_normalizing(self, fname="S_DB.csv"):
         """This function presents the spectrogram of the file after the transformation(fft)"""
         # global SDB
         # generate spectrogram
         scale, sr = librosa.load(self.file)  # returns audio time series, sampling rate of scale
-        sample_length = sr*2
-        sample_div_2 = int(sample_length/2)
+        sample_length = sr
+        sample_div_2 = int((sample_length+1)/2)
         if fname != "S_DB.csv":
             #scale_list = [scale[:int(sample_length/2)], scale[int(sample_length/2):2*sample_length]]
             scale_list = []
-            sample_length = math.floor(len(scale) / (sample_div_2))
-            for x in range(sample_length):
-                scale_list.append(scale[sample_div_2*x:sample_div_2*(x+1)])
+
+            sample_div_parts = math.floor(len(scale) / sample_div_2)
+            for x in range(sample_div_parts):
+                for y in range(sample_div_2*x, sample_div_2*(x+1), int((sample_div_2+1)/2)):
+                    print(f"sample range {y} - {y+sample_div_2}")
+                    if y+sample_div_2 <= len(scale):
+                        scale_list.append(scale[y:y+sample_div_2])
         else:
             song_length = math.floor(len(scale)/(sample_div_2))  # The length in the number of times the length if the sample
             scale_list = []
             for x in range(song_length):
+                print(f"song range {sample_div_2*x} - {sample_div_2*(x+1)}")
                 scale_list.append(scale[sample_div_2*x:sample_div_2*(x+1)])
         for scale in scale_list:
             S_scale = librosa.stft(scale, n_fft=FRAME_SIZE, hop_length=HOP_SIZE)
@@ -188,16 +192,19 @@ class Spec:
 
     def peaks(self, measures):
         """ In this function all the peaks are presented on top of the spectrogram"""
+
         for peaks_spec in self.peaks_spec_list:
+            index = []
             rows, cols = len(peaks_spec), len(peaks_spec[0])
             for col in range(cols):
                 for row in range(rows):
                     if peaks_spec[row][col] > measures.AVERAGES_UP[
                         0]:  # or 0.1 < self.peaks_spec[row][col] < AVERAGES_DOWN[int(col/256)]
                         peaks_spec[row][col] = 0.5
-                        self.index.append((col, row))
+                        index.append((col, row))
                     else:
                         peaks_spec[row][col] = 0.0
+            self.index_list.append(index)
         '''if self.name == "PressStart":
             print("gg")
             INDEXSONG = self.index'''
@@ -208,37 +215,46 @@ class Spec:
 
     def hash(self, fname):
         """ builds self.tp_list, self.FrequencyDirectionHashash and self.fmap """
-        last_tp = None
-        dirvec = None
-
-        f = open(fname, "w")
-        for i in range(len(self.index)):
-            freq = self.index[i][1]
-            time = self.index[i][0]
-            if i == 0:
-                last_tp = tp(freq)
-                self.tp_list.append(last_tp)
-            else:
-                prev_time = self.index[i - 1][0]
-                prev_freq = self.index[i - 1][1]
-                #if abs(time - prev_time) >= 1:
-                length = math.dist(self.index[i], self.index[i - 1])
-                dirvec = DirectionVector(length, math.degrees(math.asin((freq - prev_freq) / length)))
-                TracePoint = tp(freq)
-                last_tp.follow = TracePoint
+        tp_list = []
+        #f = open(fname, "w")
+        for index in self.index_list:
+            last_tp = None
+            dirvec = None
+            tp_list = []
+            for i in range(len(index)):
+                freq = index[i][1]
+                time = index[i][0]
+                if i == 0:
+                    last_tp = tp(freq)
+                    tp_list.append(last_tp)
+                else:
+                    prev_time = index[i - 1][0]
+                    prev_freq = index[i - 1][1]
+                    #if abs(time - prev_time) >= 1:
+                    length = math.dist(index[i], index[i - 1])
+                    # if length == 0:
+                    #     print(index)
+                    #     print(i)
+                    #     print(f"{index[i]}-{index[i-1]}")
+                    dirvec = DirectionVector(length, math.degrees(math.asin((freq - prev_freq) / length)))
+                    TracePoint = tp(freq)
+                    last_tp.follow = TracePoint
+                    last_tp.direction_vector = dirvec
+                    tp_list.append(TracePoint)
+                    #if last_tp.direction_vector is not None:
+                        #f.write(f"{last_tp.frequency},{last_tp.direction_vector.angle}, {last_tp.direction_vector.length}\n")
+                    last_tp = TracePoint
+            #f.close()
+            if last_tp is not None:
                 last_tp.direction_vector = dirvec
-                self.tp_list.append(TracePoint)
-                if last_tp.direction_vector is not None:
-                    f.write(f"{last_tp.frequency},{last_tp.direction_vector.angle}, {last_tp.direction_vector.length}\n")
-                last_tp = TracePoint
-
-        f.close()
-        last_tp.direction_vector = dirvec
+            self.tp_lists_list.append(tp_list)
         '''for tpt in self.tp_list:
             print(tpt.__str__())'''
         if self.name in DatabaseList:
-            self.FrequencyDirectionHash = build_and_add_signature(self.tp_list)
+            for tp_list in self.tp_lists_list:
+                build_and_add_signature(self.FrequencyDirectionHash, tp_list)
             self.fmap = fm(self.FrequencyDirectionHash).frequencies
+
         # plt.scatter(x, y, color="gray", s=5)
         # plt.show()
         # print(f"tp_list: {self.tp_list}, FrequencyDirectionHashash: {self.FrequencyDirectionHashash}, fmap: {self.fmap}")
@@ -248,18 +264,12 @@ class Spec:
         :return: the hash of the song/sample
         """
         if self.name not in DatabaseList:
-            return self.tp_list
+            return self.tp_lists_list
         song_hash = FrequencyDirectionHash()
-        for tp in self.tp_list:
-            song_hash.add(tp)
+        for tp_list in self.tp_lists_list:
+            for tp in tp_list:  # The last added value
+                song_hash.add(tp)
         return song_hash
-
-    def indices(self, list1, list2):
-        index = 1
-        for t in list1[1:]:
-            if math.isclose(t[0], list2[1][0], abs_tol=10) and math.isclose(t[1], list2[1][1], abs_tol=5):
-                self.indices_list.append(index)
-            index += 1
 
     def match(self, tp_sample, hash_song, song_fmap):
         # list2 = list1[100:200]
@@ -267,12 +277,7 @@ class Spec:
 
         current_tp = tp_sample[0]  # The starting tp
         tp_list = find_in_hash(hash_song, song_fmap, current_tp)
-        # tp_sample = []
-        # p = tp_list[0]
-        # for i in range(200):
-        #     tp_sample.append(p)
-        #     p = p.follow
-        self.best_match = 0
+        best_match = 0
         winner_tp_song = None
         for tp_song in tp_list:
             matches = 0
@@ -287,22 +292,23 @@ class Spec:
                 tp_song = tp_song.follow
                 # if total == 20:
                 #     break
-            if total > 0 and self.best_match < (matches/total) * 100:
-                self.best_match = (matches/total) * 100
+            if total > 0 and best_match < (matches/total) * 100:
+                best_match = (matches/total) * 100
                 winner_tp_song = starter
-            print(f"total = {total}, matchws = {matches}")
-            print(f"The match percentage is { (matches/total) * 100 }%")
+            #print(f"total = {total}, matchws = {matches}")
+            #print(f"The match percentage is { (matches/total) * 100 }%")
+        return best_match
 
-        print(f"The best match percentage is { self.best_match }%")
-        file = open("tp_sample.csv", "w")
-        file_song = open("tp_song.csv", "w")
-        tp = tp_sample[0]
-        tp_song = winner_tp_song
-        while tp is not None and tp_song is not None:
-            file.write(f"{tp.frequency},{tp.direction_vector.angle}, {tp.direction_vector.length}\n")
-            tp = tp.follow
-            file_song.write(f"{tp_song.frequency},{tp_song.direction_vector.angle}, {tp_song.direction_vector.length}\n")
-            tp_song = tp_song.follow
+        # file = open("tp_sample.csv", "w")
+        # file_song = open("tp_song.csv", "w")
+        # tp = tp_sample[0]
+        # tp_song = winner_tp_song
+        # while tp is not None and tp_song is not None:
+        #     file.write(f"{tp.frequency},{tp.direction_vector.angle}, {tp.direction_vector.length}\n")
+        #     tp = tp.follow
+        #     file_song.write(f"{tp_song.frequency},{tp_song.direction_vector.angle}, {tp_song.direction_vector.length}\n")
+        #     tp_song = tp_song.follow
+
         # print(f"indices: {self.indices_list}")
         # total = 0
         # for index in self.indices_list:
@@ -325,6 +331,14 @@ class Spec:
         # else:
         #     print(f"The match percentage is {self.best_match}%")
 
+    def match_matches(self, tp_samples, hash_song, song_fmap):
+        for tp_sample in tp_samples:
+            if tp_sample:
+                new_match = self.match(tp_sample, hash_song, song_fmap)
+                if new_match > self.best_match:
+                    self.best_match = new_match
+                #print(f"The new match percentage is {new_match}%")
+        print(f"The best match percentage is {self.best_match}%")
     @staticmethod
     def translate(value, src, dest):
         """
@@ -374,7 +388,7 @@ if __name__ == "__main__":
     p1 = Spec("PressStart")
     measures = p1.run("song.csv")
 
-    p2 = Spec("sample28")
+    p2 = Spec("sample1.5-6.5")
     p2.run("sample.csv", measures)
 
     p2.compare(p1)
