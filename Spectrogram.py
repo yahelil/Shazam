@@ -17,6 +17,7 @@ SDB = []
 DatabaseList = ["PressStart"]
 FRAME_SIZE = 2048
 HOP_SIZE = 1000
+LOWFREQTHRESHOLD = 50
 
 
 class Measures:
@@ -138,7 +139,7 @@ class Spec:
             rows, cols = len(peaks_spec), len(peaks_spec[0])
             for row in range(rows):
                 for col in range(cols):
-                    if row < 200:
+                    if row < LOWFREQTHRESHOLD:
                         peaks_spec[row][col] = 0.0
             self.peaks_spec_list.append(peaks_spec)
 
@@ -154,15 +155,15 @@ class Spec:
 
             sample_div_parts = math.floor(scale.size / sample_div_2)
             for x in range(sample_div_parts):
-                for y in range(sample_div_2*x, sample_div_2*(x+1), int((sample_div_2+1)/2)):
-                    print(f"sample range {y} - {y+sample_div_2}")
+                for y in range(sample_div_2*x, sample_div_2*(x+1), int((sample_div_2+1)/5)):
+                    #print(f"sample range {y} - {y+sample_div_2}")
                     if y+sample_div_2 <= scale.size:
                         scale_list.append(scale[y:y+sample_div_2])
         else:
             song_length = math.floor(scale.size/sample_div_2)  # The length in the number of times the length if the sample
             scale_list = []
             for x in range(song_length):
-                print(f"song range {sample_div_2*x} - {sample_div_2*(x+1)}")
+                #print(f"song range {sample_div_2*x} - {sample_div_2*(x+1)}")
                 scale_list.append(scale[sample_div_2*x:sample_div_2*(x+1)])
         for scale in scale_list:
             S_scale = librosa.stft(scale, n_fft=FRAME_SIZE, hop_length=HOP_SIZE)
@@ -255,8 +256,9 @@ class Spec:
                     matches += 1
                 current_tp = current_tp.follow
                 tp_song = tp_song.follow
-            if total > 0 and best_match < (matches/total) * 100:
+            if total > 400 and best_match < (matches/total) * 100:
                 best_match = (matches/total) * 100
+                print(f"match: {matches}, total: {total}")
         return best_match
 
     def match_matches(self, tp_samples, hash_song, song_fmap):
@@ -265,6 +267,7 @@ class Spec:
                 new_match = self.match(tp_sample, hash_song, song_fmap)
                 if new_match > self.best_match:
                     self.best_match = new_match
+                    print("picking")
         print(f"The best match percentage is {self.best_match}%")
 
     @staticmethod
@@ -285,6 +288,8 @@ if __name__ == "__main__":
     p1 = Spec("PressStart")
     measures = p1.run("song.csv")
 
+    #p2 = Spec("AudacityRecordedPressStartSample")
+    #p2 = Spec("realsamplesymbolism")
     p2 = Spec("sample1.5-6.5")
     p2.run("sample.csv", measures)
 
