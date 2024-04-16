@@ -4,8 +4,7 @@ import librosa
 import librosa.display
 import numpy as np
 import matplotlib.pyplot as plt
-from Hash import build_and_add_signature, TracePoint as tp, \
-    DirectionVector, FrequencyMap as fm, find_in_hash, FrequencyDirectionHash
+from HashCopy import TracePoint as tracepoint
 
 '''
 This file's job is to:
@@ -95,7 +94,6 @@ class Spec:
         self.name = song
         self.fmap = None
         self.tp_lists_list = []
-        self.FrequencyDirectionHash = FrequencyDirectionHash()
         self.file = f"database/{song}.wav"
         self.S_db_list = []
         self.peaks_spec_list = []
@@ -121,6 +119,7 @@ class Spec:
             measures.save_averages()
 
         self.peaks(measures)
+        self.dominante()
         self.hash()
 
         return measures
@@ -191,59 +190,47 @@ class Spec:
                     else:
                         peaks_spec[row][col] = 0.0
             self.index_list.append(index)
+        a=14
         # # The spectrogram with peaks
         # plt.imshow(self.peaks_spec, cmap=plt.get_cmap('gray'))
         # plt.savefig('original_spectrogram.png', bbox_inches='tight', pad_inches=0)
         # plt.show()
+
+    def dominante(self):
+        """removes all the non-dominant trace points from self.index_list"""
+        position_counter = -1
+        remove_list_positions = []
+        for index in self.index_list:
+            position_counter += 1
+            tp_last_dominant = None
+            tp_current_dominant = None
+            for i in range(len(index)):
+                freq = index[i][0]
+                time = index[i][1]
+                amplitude = self.peaks_spec_list[position_counter][freq][time]
+                if i == 0:
+                    tp_current_dominant = tracepoint(freq, time, amplitude)
+                else:
+                    TracePoint = tracepoint(freq, time, amplitude)
+                    if tp_last_dominant is None or tp_last_dominant.time == tp_current_dominant.time:
+                        if amplitude > tp_current_dominant.amplitude:
+                            tp_current_dominant = TracePoint
+                            tp_last_dominant = tp_current_dominant
+                        else:
+                            remove_list_positions.append(i)
+                    tp_current_dominant = TracePoint
+            counter = 0
+            for position in remove_list_positions:
+                index.pop(position-counter)  # the original position minus the number of elements that were removed
+                counter += 1
+        a=27
 
     def hash(self):
         """ builds self.tp_list, self.FrequencyDirectionHashash and self.fmap """
         position_counter = -1
         for index in self.index_list:
             position_counter += 1
-            dirvec = DirectionVector(0, 0)
-            tp_list = []
-            tp_last_dominant = None
-            tp_current_dominant = None
-            for i in range(len(index)):
-                freq = index[i][1]
-                time = index[i][0]
-                amplitude = self.peaks_spec_list[position_counter][time][freq]
-                if i == 0:
-                    tp_current_dominant = tp(freq, time, amplitude)
-                else:
-                    prev_freq = index[i - 1][1]
-                    length = math.dist(index[i], index[i - 1])
-                    dirvec = DirectionVector(length, math.degrees(math.asin((freq - prev_freq) / length)))
-                    TracePoint = tp(freq, time, amplitude)
-                    if tp_last_dominant is None or tp_last_dominant.time == tp_current_dominant.time:
-                        if amplitude > tp_current_dominant.amplitude:
-                            tp_current_dominant = TracePoint
-
-                    else:
-                        if tp_last_dominant is not None:
-                            tp_last_dominant.follow = tp_current_dominant
-                            freq = tp_current_dominant.frequency
-                            prev_freq = tp_last_dominant.frequency
-                            length = math.dist((freq, tp_current_dominant.time), (prev_freq, tp_last_dominant.time))
-                            dirvec = DirectionVector(length, math.degrees(math.asin((freq - prev_freq) / length)))
-                            tp_last_dominant.direction_vector = dirvec
-                            tp_list.append(tp_last_dominant)
-                    tp_last_dominant = tp_current_dominant
-                    tp_current_dominant = TracePoint
-            if tp_current_dominant is not None:
-
-                tp_current_dominant.direction_vector = dirvec
-                tp_list.append(tp_current_dominant)
-            if tp_list:
-                self.tp_lists_list.append(tp_list)
-        if self.name in DatabaseList:
-            for tp_list in self.tp_lists_list:
-                build_and_add_signature(self.FrequencyDirectionHash, tp_list)
-            self.fmap = fm(self.FrequencyDirectionHash).frequencies
-
-        # plt.scatter(x, y, color="gray", s=5)
-        # plt.show()
+            tp_liat = []
 
     def search(self):
         """
@@ -251,39 +238,13 @@ class Spec:
         """
         if self.name not in DatabaseList:
             return self.tp_lists_list
-        song_hash = FrequencyDirectionHash()
         for tp_list in self.tp_lists_list:
             for tp in tp_list:  # The last added value
                 song_hash.add(tp)
         return song_hash
 
-    def match(self, tp_sample, hash_song, song_fmap):
-        current_tp = tp_sample[0]  # The starting tp
-        tp_list = find_in_hash(hash_song, song_fmap, current_tp)
-        best_match = 0
-        for tp_song in tp_list:
-            matches = 0
-            total = 0
-            current_tp = tp_sample[0]
-            while current_tp is not None and tp_song is not None:  # not the last tp
-                total += 1
-                if current_tp == tp_song:
-                    matches += 1
-
-                current_tp = current_tp.follow
-                tp_song = tp_song.follow
-            if total > 400 and best_match < (matches/total) * 100:
-                best_match = (matches/total) * 100
-        return best_match
-
-    def match_matches(self, tp_samples, hash_song, song_fmap):
-        for tp_sample in tp_samples:
-            if tp_sample:
-                new_match = self.match(tp_sample, hash_song, song_fmap)
-                if new_match > self.best_match:
-                    self.best_match = new_match
-                    print(f"best_match: {self.best_match}")
-        print(f"The best match percentage is {self.best_match}%")
+    def match(self):
+        pass
 
     @staticmethod
     def translate(value, src, dest):
