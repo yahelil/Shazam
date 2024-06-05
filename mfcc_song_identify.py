@@ -1,4 +1,5 @@
 import socket
+import sys
 import threading
 import librosa
 import numpy as np
@@ -87,6 +88,7 @@ class Server:
                         test_mfcc = extract_mfcc('received_output.wav')
                         recognized_song = recognize_song(test_mfcc, database)
                         print(f'The recognized song is: {recognized_song}\n')
+                        client_socket.send(f'The recognized song is: {recognized_song}'.encode("utf-8"))
                     else:
                         client_socket.send("Connection DENIED".encode('utf-8'))
                 else:
@@ -95,7 +97,6 @@ class Server:
             print(f"Connection closed: {client_address}")
             client_socket.close()
         print(clients)
-        quit()
 
     def get_sample(self, client_socket, output_filename="received_output.wav"):
         """
@@ -112,7 +113,7 @@ class Server:
             print("Receiving file...")
             while True:
                 data = client_socket.recv(1024)
-                if not data:
+                if not data or data[-4:] == b'stop':
                     break
                 f.write(data)
         print(f"File received and saved as {output_filename}")
@@ -162,3 +163,4 @@ for sample_name in sample_name_list:
 if __name__ == "__main__":
     s = Server()
     s.start()
+    quit()

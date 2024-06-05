@@ -71,9 +71,9 @@ def send_sample(client_socket: socket, filename="output.wav"):
         print("Sending file...")
         while True:
             data = f.read(1024)
+            client_socket.sendall(data)
             if not data:
                 break
-            client_socket.sendall(data)
     print("File sent successfully")
 
 def Assign():
@@ -84,10 +84,15 @@ def Assign():
     if response == "Connection APPROVED":
         record_audio()
         send_sample(client_socket, "MoreWavs/FireToTheRain2.wav")
+        client_socket.send("stop".encode('utf-8'))
+        msg = client_socket.recv(1024).decode('utf-8')
+        result = msg.split()[-1]
+        print(f'\n\nThe match that was found is {result}!!!')
     if response == "Connection DENIED":
         client_socket.close()
 
-register_or_assign = input("Do you want to register or assign?")
+#register_or_assign = input("Do you want to register or assign?")
+register_or_assign = 'a'
 if register_or_assign == 'r':
     Register()
 elif register_or_assign == 'a':
