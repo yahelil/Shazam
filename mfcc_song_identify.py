@@ -7,7 +7,7 @@ from scipy.spatial.distance import euclidean
 
 SERVER_HOST = '127.0.0.1'
 SERVER_PORT = 65432
-clients = [("Client1", "1678")]
+clients = []
 
 
 def extract_mfcc(file_path, n_mfcc=13):
@@ -21,16 +21,29 @@ def extract_mfcc(file_path, n_mfcc=13):
 
 
 def recognize_song(test_mfcc, database):
-    min_distance = float('inf')
-    recognized_song = None
+    distances = []
 
+    # Calculate the distance from the test MFCC to each song's MFCC in the database
     for song_name, song_mfcc in database.items():
         distance = euclidean(test_mfcc, song_mfcc)
-        if distance < min_distance:
-            min_distance = distance
-            recognized_song = song_name
+        print(distance)
+        distances.append((distance, song_name))
 
-    return recognized_song
+    # Sort the list by distance (ascending order)
+    distances.sort()
+
+    # Determine whether the recognized song is dominant
+    Is_Dominant = False
+    top_2_distances = [distance for distance, _ in distances[:2]]
+    if top_2_distances[0] / top_2_distances[1] < 0.5:
+        Is_Dominant = True
+
+    # Extract the top 3 matches
+    top_3_matches = [song_name for _, song_name in distances[:3]]
+
+    if Is_Dominant:
+        top_3_matches = top_3_matches[0]
+    return top_3_matches, Is_Dominant
 
 
 database = {
@@ -76,8 +89,12 @@ class Server:
                 if message.startswith('REGISTER'):
                     client_name = message.split()[1]
                     client_password = message.split()[2]
-                    clients.append((client_name, client_password))
-                    client_socket.send(f"Registered as {client_name}".encode('utf-8'))
+                    if (client_name, client_password) in clients:
+                        client_socket.send(f"{client_name} already registered".encode('utf-8'))
+                    else:
+                        clients.append((client_name, client_password))
+                        client_socket.send(f"Registered as {client_name}".encode('utf-8'))
+
                 elif message.startswith('ASSIGN'):
                     client_name = message.split()[1]
                     client_password = message.split()[2]
@@ -86,9 +103,9 @@ class Server:
                         self.get_sample(client_socket)
                         print("The sampled song is : received_output.wav")
                         test_mfcc = extract_mfcc('received_output.wav')
-                        recognized_song = recognize_song(test_mfcc, database)
-                        print(f'The recognized song is: {recognized_song}\n')
-                        client_socket.send(f'The recognized song is: {recognized_song}'.encode("utf-8"))
+                        recognized_song, Is_Dominant = recognize_song(test_mfcc, database)
+                        print(f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {",".join(recognized_song)}\n')
+                        client_socket.send(f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}'.encode("utf-8"))
                     else:
                         client_socket.send("Connection DENIED".encode('utf-8'))
                 else:
@@ -163,4 +180,3 @@ for sample_name in sample_name_list:
 if __name__ == "__main__":
     s = Server()
     s.start()
-    quit()
