@@ -2,190 +2,16 @@ import socket
 import threading
 import librosa
 import numpy as np
+from numpy import ndarray
 from scipy.spatial.distance import euclidean
-import mysql.connector
+
+import protocol
+from Database import *
+from protocol import *
 
 SERVER_HOST = '127.0.0.1'
 SERVER_PORT = 65433
-
-
-def get_clints_database():
-    # Connect to the MySQL server
-    mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-    )
-
-    mycursor = mydb.cursor()
-
-    # Select all data from the Clients table
-    mycursor.execute("SELECT * FROM Clients")
-
-    # Fetch all rows from the executed query
-    result = mycursor.fetchall()
-
-    # Print each row
-    return result
-
-
-def delete_client(username):
-    # Connect to the MySQL server
-    mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-    )
-
-    mycursor = mydb.cursor()
-
-    try:
-        # Check if the username exists
-        mycursor.execute("SELECT COUNT(*) FROM Clients WHERE username = %s", (username,))
-        result = mycursor.fetchone()
-
-        if result[0] > 0:
-            # Delete the user with the given username
-            sql = "DELETE FROM Clients WHERE username = %s"
-            mycursor.execute(sql, (username,))
-            print(f"{mycursor.rowcount} record(s) deleted.")
-        else:
-            print("Username not found. No deletion performed.")
-
-        # Commit the transaction
-        mydb.commit()
-
-        # Fetch all data from the Clients table to verify the deletion
-        mycursor.execute("SELECT * FROM Clients")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-            print(row)
-
-    except mysql.connector.Error as error:
-        print("Error:", error)
-
-    finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
-
-
-def update_clients_database(username, password):
-    # Connect to the MySQL server
-    mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-    )
-
-    mycursor = mydb.cursor()
-
-    try:
-        # Check if the username exists
-        mycursor.execute("SELECT COUNT(*) FROM Clients WHERE username = %s", (username,))
-        result = mycursor.fetchone()
-
-        if result[0] == 0:
-            # Insert the new username and password
-            sql = "INSERT INTO Clients (username, password) VALUES (%s, %s)"
-            val = (username, password)
-            mycursor.execute(sql, val)
-            print(f"{mycursor.rowcount} record(s) inserted.")
-        else:
-            print("Username already exists. No insertion performed.")
-
-        # Commit the transaction
-        mydb.commit()
-
-        # Fetch all data from the Clients table to verify the update
-        mycursor.execute("SELECT * FROM Clients")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-            print(row)
-
-    except mysql.connector.Error as error:
-        print("Error:", error)
-
-    finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
-
-
-def create_database():
-    # Connect to the MySQL server
-    mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-    )
-
-    mycursor = mydb.cursor()
-
-    # Fetch all data from the mfcc_songs_db table
-    mycursor.execute("SELECT * FROM mfcc_songs_db")
-    result = mycursor.fetchall()
-    database = {}
-    # Print each row
-    for row in result:
-        database[row[1]] = np.fromstring(row[2].decode("utf-8").strip('[]'), sep=' ')
-
-    # Close the cursor and connection
-    mycursor.close()
-    mydb.close()
-    return database
-
-
-def update_mfcc_songs_db():
-    # Connect to the MySQL server
-    mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-    )
-
-    mycursor = mydb.cursor()
-
-    # Insert data into the mfcc_songs_db table
-    sql = "INSERT INTO mfcc_songs_db (song_name, mfcc_data) VALUES (%s, %s)"
-    val = [
-        ('PressStart', extract_mfcc(r'MoreWavs/normalized_press_start.wav'))
-    ]
-
-    try:
-        # Execute the SQL command for each row of data
-        for v in val:
-            mycursor.execute(sql, v)
-
-        # Commit the transaction
-        mydb.commit()
-
-        print(mycursor.rowcount, "record(s) inserted.")
-
-        # Fetch all data from the `mfcc_songs_db` table to verify the insertion
-        mycursor.execute("SELECT * FROM mfcc_songs_db")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-            print(row)
-
-    except mysql.connector.Error as error:
-        print("Error:", error)
-
-    finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
+database = {}
 
 
 def extract_mfcc(file_path, n_mfcc=13):
@@ -212,8 +38,6 @@ def extract_mfcc(file_path, n_mfcc=13):
         # Calculate the variance of the MFCC features (excluding the first coefficient)
         mfccs_var = np.var(mfccs.T, axis=0)
 
-        # Concatenate the mean and variance to form the feature vector
-        #return np.concatenate((mfccs_mean, mfccs_var))
         return str(mfccs_var)
 
     except Exception as e:
@@ -233,7 +57,7 @@ def recognize_song(test_mfcc):
     Returns:
         tuple: The recognized song or top matches, and a boolean indicating if the match is dominant.
     """
-    database = create_database()
+    database = Database.create_database()
 
     try:
         if not test_mfcc:
@@ -263,22 +87,11 @@ def recognize_song(test_mfcc):
         return None, False
 
 
-database = {
-            #'oasis': extract_mfcc(r'MoreWavs/normalized_livail-oasis-114751.wav'),
-            #'see-you-later': extract_mfcc(r'wav-s\see-you-later-203103.wav'),
-            #'LetItBe': extract_mfcc(r'MoreWavs\normalized_LetItBe.wav'),
-            #'Yesterday': extract_mfcc(r'MoreWavs\normalized_Yesterday.wav'),
-            #'HereComesTheSun': extract_mfcc(r'MoreWavs\HereComesTheSun.wav'),
-            #'FireToTheRain': extract_mfcc(r'MoreWavs\FireToTheRain.wav'),
-            #'PressStart': extract_mfcc(r'MoreWavs\PressStart.wav')
-            # Add more songs to the database
-        }
-
-
 class Server:
 
     def __init__(self):
         self.server_socket = None
+        self.prot = None
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -290,6 +103,7 @@ class Server:
             while True:
                 client_socket, client_address = self.server_socket.accept()
                 print(f"Accepted new connection from {client_address}")
+                self.prot = protocol.Protocol(client_socket)
                 client_handler = threading.Thread(target=self.handle_client, args=(client_socket, client_address))
                 client_handler.start()
         except KeyboardInterrupt:
@@ -301,7 +115,7 @@ class Server:
         print(f"New connection: {client_address}")
         try:
             while True:
-                message = client_socket.recv(1024).decode('utf-8')
+                message = self.prot.get_msg()[1].decode('utf-8')
                 if not message:
                     break
                 self.process_message(message, client_socket)
@@ -328,60 +142,60 @@ class Server:
         if not client_name or not client_password:
             client_socket.send("Username and password cannot be empty".encode('utf-8'))
             return
-        clients = get_clints_database()
+        clients = Database.get_clints_database()
         registered = False
         for client in clients:
             if (client_name, client_password) == (client[1], client[2]):
                 client_socket.send(f"{client_name} already registered".encode('utf-8'))
                 registered = True
         if not registered:
-            update_clients_database(client_name, client_password)
+            Database.update_clients_database(client_name, client_password)
             client_socket.send(f"Registered as {client_name}".encode('utf-8'))
 
     def assign_client(self, message, client_socket):
         client_name, client_password = message.split()[1:3]
-        clients = get_clints_database()
+        clients = Database.get_clints_database()
         for client in clients:
             if (client_name, client_password) == (client[1], client[2]):
                 client_socket.send("Connection APPROVED".encode('utf-8'))
-                self.get_sample(client_socket)
-                test_mfcc = extract_mfcc('received_output.wav')
+                test_mfcc = self.prot.get_msg()[1].decode('utf-8')
                 if test_mfcc is not None:
                     recognized_song, Is_Dominant = recognize_song(test_mfcc)
-                    client_socket.send(f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}'.encode("utf-8"))
+                    msg = f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}'.encode("utf-8")
+                    msg = self.prot.create_msg(msg)
+                    client_socket.send(msg)
                 else:
                     client_socket.send("Error processing audio sample".encode("utf-8"))
             else:
                 client_socket.send("Connection DENIED".encode('utf-8'))
 
-    @staticmethod
-    def get_sample(client_socket, output_filename="received_output.wav"):
-        """
-        Receives a .wav file from the client over the given socket and saves it.
+def test():
+    print("The sampled song is : FireToTheRain_eli1.wav")
+    test_mfcc = extract_mfcc('MoreWavs/sample1_fireToTheRain.wav')
+    recognized_song = recognize_song(test_mfcc)
+    print(f'The recognized song is: {recognized_song}\n')
 
-        Args:
-            client_socket (socket): The socket connected to the client.
-            output_filename (str): The name of the file to save the received data.
+    print("The sampled song is : FireToTheRain_eli2.wav")
+    test_mfcc = extract_mfcc('MoreWavs/sample2_fireToTheRainNormalized.wav')
+    recognized_song = recognize_song(test_mfcc)
+    print(f'The recognized song is: {recognized_song}\n')
 
-        Returns:
-            None
-        """
-        with open(output_filename, 'wb') as f:
-            print("Receiving file...")
-            while True:
-                data = client_socket.recv(1024)
-                if not data or data[-4:] == b'stop':
-                    break
-                f.write(data)
-        print(f"File received and saved as {output_filename}")
-
-
-if __name__ == "__main__":
-    #update_mfcc_songs_db()
-    #delete_client("Client1")
-    #fetch_mfcc_songs_db()
+    print("The sampled song is : FireToTheRain_eli3.wav")
+    test_mfcc = extract_mfcc('MoreWavs/sample3_fireToTheRain.wav')
+    recognized_song = recognize_song(test_mfcc)
+    print(f'The recognized song is: {recognized_song}\n')
+    
+def main():
     s = Server()
     s.start()
+    
+    
+if __name__ == "__main__":
+    main()
+    #test()
+
+
+
 '''
 
 # Example usage
