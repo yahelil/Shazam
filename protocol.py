@@ -7,22 +7,22 @@ class Protocol:
     def get_msg(self) -> (bool, bytes):
         data = self.current_socket.recv(Protocol.MESSAGE_LENGTH)
         if data == b"":
-            return False, "Connection Error"
+            return False, "Connection Error".encode('utf-8')
 
         try:
             print(data)
             datalen = int(data.decode().strip())
         except ValueError:
-            return False, "Message Error"
+            return False, "Message Error".encode('utf-8')
 
         data = self.current_socket.recv(datalen)
         if data == b"":
-            return False, "Connection Error"
+            return False, "Connection Error".encode('utf-8')
 
         while len(data) < datalen:
             extra = self.current_socket.recv(datalen - len(data))
             if extra == b"":
-                return False, "Connection Error"
+                return False, "Connection Error".encode('utf-8')
             data += extra
 
         return True, data
@@ -30,4 +30,5 @@ class Protocol:
     def create_msg(self, data: bytes):
         datalen = len(data)
         msg = str(datalen).zfill(self.MESSAGE_LENGTH).encode() + data
+        print(f"{msg =}")
         return msg
