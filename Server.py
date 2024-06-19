@@ -169,6 +169,7 @@ class Server:
             else:
                 client_socket.send("Connection DENIED".encode('utf-8'))
 
+
 def test():
     print("The sampled song is : FireToTheRain_eli1.wav")
     test_mfcc = extract_mfcc('MoreWavs/sample1_fireToTheRain.wav')
@@ -184,17 +185,16 @@ def test():
     test_mfcc = extract_mfcc('MoreWavs/sample3_fireToTheRain.wav')
     recognized_song = recognize_song(test_mfcc)
     print(f'The recognized song is: {recognized_song}\n')
-    
+
+
 def main():
     s = Server()
     s.start()
-    
-    
+
+
 if __name__ == "__main__":
     main()
-    #test()
-
-
+    # test()
 
 '''
 
@@ -235,4 +235,3 @@ for sample_name in sample_name_list:
 # test_mfcc = extract_mfcc('MoreWavs/FireToTheRain2.wav')
 # recognized_song = recognize_song(test_mfcc, database)
 # print(f'The recognized song is: {recognized_song}')
-

@@ -1,6 +1,7 @@
 import librosa
 import mysql.connector
 import numpy as np
+import hashlib
 
 
 class Database:
@@ -53,7 +54,6 @@ class Database:
 
       # Fetch all rows from the executed query
       result = mycursor.fetchall()
-
       # Print each row
       return result
 
@@ -122,7 +122,8 @@ class Database:
         if result[0] == 0:
           # Insert the new username and password
           sql = "INSERT INTO Clients (username, password) VALUES (%s, %s)"
-          val = (username, password)
+          md5_password = hashlib.md5(password.encode()).hexdigest()
+          val = (username, md5_password)
           mycursor.execute(sql, val)
           print(f"{mycursor.rowcount} record(s) inserted.")
         else:
@@ -172,7 +173,6 @@ class Database:
       mydb.close()
       return database
 
-
     def insert_mfcc_songs_db(self):
       # Connect to the MySQL server
       mydb = mysql.connector.connect(
@@ -186,9 +186,10 @@ class Database:
 
       # Insert data into the mfcc_songs_db table
       sql = "INSERT INTO mfcc_songs_db (song_name, mfcc_data) VALUES (%s, %s)"
-      val = [
-        ('FireToTheRain_eli', self.extract_mfcc(r'DataBaseSongs/sample2_fireToTheRainNormalized.wav')),
-      ]
+      val = []
+      for i in range(0, 360, 5):
+        val.append(
+          (f'BlindingLights_{i}_{i + 5}', self.extract_mfcc(f'SplitBlindingLights/BlindingLights{i}_{i + 5}.wav')), )
 
       try:
         # Execute the SQL command for each row of data
@@ -215,3 +216,160 @@ class Database:
         # Close the cursor and connection
         mycursor.close()
         mydb.close()
+
+    @staticmethod
+    def delete_song_mfcc(song_name):
+      # Connect to the MySQL server
+      mydb = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="yaheli11",
+        database="mydatabase"
+      )
+
+      mycursor = mydb.cursor()
+
+      try:
+        # Check if the song name exists
+        mycursor.execute("SELECT COUNT(*) FROM mfcc_songs_db WHERE song_name = %s", (song_name,))
+        result = mycursor.fetchone()
+
+        if result[0] > 0:
+          # Delete the song with the given song name
+          sql = "DELETE FROM mfcc_songs_db WHERE song_name = %s"
+          mycursor.execute(sql, (song_name,))
+          print(f"{mycursor.rowcount} record(s) deleted.")
+        else:
+          print("Song name not found. No deletion performed.")
+
+        # Commit the transaction
+        mydb.commit()
+
+        # Fetch all data from the mfcc_songs_db table to verify the deletion
+        mycursor.execute("SELECT * FROM mfcc_songs_db")
+        result = mycursor.fetchall()
+
+        # Print each row to verify the data
+        for row in result:
+          print(row)
+
+      except mysql.connector.Error as error:
+        print("Error:", error)
+
+      finally:
+        # Close the cursor and connection
+        mycursor.close()
+        mydb.close()
+
+    @staticmethod
+    def delete_duplicates():
+      # Connect to the MySQL server
+      mydb = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="yaheli11",
+        database="mydatabase"
+      )
+
+      mycursor = mydb.cursor()
+
+      try:
+        # Find all duplicate song names
+        find_duplicates_query = """
+                      SELECT song_name, COUNT(*)
+                      FROM mfcc_songs_db
+                      GROUP BY song_name
+                      HAVING COUNT(*) > 1;
+                  """
+        mycursor.execute(find_duplicates_query)
+        duplicates = mycursor.fetchall()
+
+        for song_name, count in duplicates:
+          # Keep one record and delete the others
+          delete_duplicates_query = """
+                          DELETE FROM mfcc_songs_db
+                          WHERE song_name = %s
+                          LIMIT %s;
+                      """
+          # Delete (count - 1) records for each duplicate song_name
+          mycursor.execute(delete_duplicates_query, (song_name, count - 1))
+
+        # Commit the transaction
+        mydb.commit()
+
+        print(f"Deleted {mycursor.rowcount} duplicate record(s).")
+
+        # Fetch all data from the mfcc_songs_db table to verify the deletions
+        mycursor.execute("SELECT * FROM mfcc_songs_db")
+        result = mycursor.fetchall()
+
+        # Print each row to verify the data
+        for row in result:
+          print(row)
+
+      except mysql.connector.Error as error:
+        print("Error:", error)
+
+      finally:
+        # Close the cursor and connection
+        mycursor.close()
+        mydb.close()
+
+    @staticmethod
+    def renumber_ids():
+      # Connect to the MySQL server
+      mydb = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="yaheli11",
+        database="mydatabase"
+      )
+
+      mycursor = mydb.cursor()
+
+      try:
+        # Create a temporary table with the same structure but with a new auto-incremented ID column
+        mycursor.execute("""
+                    CREATE TABLE temp_table LIKE mfcc_songs_db
+                """)
+
+        # Insert data from the original table into the temporary table
+        mycursor.execute("""
+                    INSERT INTO temp_table (song_name, mfcc_data)
+                    SELECT song_name, mfcc_data
+                    FROM mfcc_songs_db
+                """)
+
+        # Drop the original table
+        mycursor.execute("DROP TABLE mfcc_songs_db")
+
+        # Rename the temporary table to the original table name
+        mycursor.execute("RENAME TABLE temp_table TO mfcc_songs_db")
+
+        print("IDs renumbered successfully.")
+
+        # Commit the transaction
+        mydb.commit()
+
+        # Fetch all data from the updated mfcc_songs_db table to verify the changes
+        mycursor.execute("SELECT * FROM mfcc_songs_db")
+        result = mycursor.fetchall()
+
+        # Print each row to verify the data
+        for row in result:
+          print(row)
+
+      except mysql.connector.Error as error:
+        print("Error:", error)
+
+      finally:
+        # Close the cursor and connection
+        mycursor.close()
+        mydb.close()
+
+
+#Database.delete_client("Elior")
+#Database.delete_song_mfcc('FireToTheRain')
+#Database.renumber_ids()
+# g = Database()
+# g.insert_mfcc_songs_db()

@@ -1,6 +1,4 @@
 import nacl
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import serialization, hashes
 from nacl import public
 from protocol import Protocol
 from nacl.public import Box, PrivateKey, PublicKey
@@ -38,10 +36,11 @@ class Encryption:
 
         try:
             decrypted_message = self.box.decrypt(encrypted_message)
+            print(f"{decrypted_message =}")
             return decrypted_message.decode('utf-8')
         except nacl.exceptions.ValueError as e:
             print(f"connection error: {e}")
-        return "connection error"
+            return "connection error"
 
     def send_key(self):
         # Serialize public key to send it over the network
