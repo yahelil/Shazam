@@ -5,6 +5,7 @@ from scipy.spatial.distance import euclidean
 from protocol import Protocol
 from Database import *
 from Encryption import Encryption
+import hashlib
 
 SERVER_HOST = '127.0.0.1'
 SERVER_PORT = 65433
@@ -72,17 +73,25 @@ def recognize_song(test_mfcc):
             print(f"Distance to {song_name}: {distance}")
         # Sort the list by distance in ascending order
         distances.sort()
+        prev_name_list = [distances[0][1].split('_')[0]]
+        top_3_distances = [distances[0][0]]
+        top_3_matches = [distances[0][1].split('_')[0]]
+        for distance, name in distances:
+            if name.split('_')[0] not in prev_name_list:
+                top_3_distances.append(distance)
+                top_3_matches.append(name.split('_')[0])
+                prev_name_list.append(name.split('_')[0])
         # Determine whether the recognized song is dominant
-        top_2_distances = [distance for distance, _ in distances[:2]]
-        Is_Dominant = top_2_distances[0] / top_2_distances[1] < 0.5
+        #top_2_distances = [distance for distance, _ in distances[:2]]
+        Is_Dominant = top_3_distances[0] / top_3_distances[1] < 0.5
         # Extract the top 3 matches
-        top_3_matches = [song_name for _, song_name in distances[:3]]
+        # top_3_matches = [song_name for _, song_name in distances[:3]]
         # Return the best match if dominant, otherwise return the top 3 matches
-        return top_3_matches[0] if Is_Dominant else top_3_matches, Is_Dominant
+        return (top_3_matches[0], top_3_distances[0], Is_Dominant) if Is_Dominant else (top_3_matches[:3], top_3_distances[:3], Is_Dominant)
     except Exception as e:
         # Handle any exceptions that occur during the recognition process
         print(f"Error recognizing song: {e}")
-        return None, False
+        return None, None, False
 
 
 class Server:
@@ -111,8 +120,7 @@ class Server:
                 client_socket, client_address = self.server_socket.accept()
                 print(f"Accepted new connection from {client_address}")
                 self.prot = Protocol(client_socket)
-                client_handler = threading.Thread(target=self.combine_funcs(self.encryption, self.handle_client),
-                                                  args=(client_socket, client_address))
+                client_handler = threading.Thread(target=self.combine_funcs(self.encryption, self.handle_client), args=(client_socket, client_address))
                 client_handler.start()
         except KeyboardInterrupt:
             print("Server shutting down.")
@@ -134,22 +142,22 @@ class Server:
                 if not message:
                     break
                 message = self.Encryption.decrypt(message)
-                self.process_message(message, client_socket)
+                self.process_message(message)
         except ConnectionAbortedError:
             print(f"{client_address} disconnected")
         finally:
             print(f"Connection closed: {client_address}")
             client_socket.close()
 
-    def process_message(self, message, client_socket):
+    def process_message(self, message):
         if message.startswith('REGISTER'):
-            self.register_client(message, client_socket)
+            self.register_client(message)
         elif message.startswith('ASSIGN'):
-            self.assign_client(message, client_socket)
+            self.assign_client(message)
         else:
-            client_socket.send("Unknown command".encode('utf-8'))
+            self.calculate_sample(message)
 
-    def register_client(self, message, client_socket):
+    def register_client(self, message):
         try:
             _, client_name, client_password = message.split()
         except ValueError:
@@ -158,32 +166,35 @@ class Server:
         if not client_name or not client_password:
             self.Encryption.send_encrypted_msg("Username and password cannot be empty".encode('utf-8'))
             return
-        clients = Database.get_clints_database()
+        clients = Database.get_clients_database()
         registered = False
         for client in clients:
-            if (client_name, client_password) == (client[1], client[2]):
+            print(f"{client[1] =}, {client[2] =}")
+            if (client_name, hashlib.md5(client_password.encode()).hexdigest()) == (client[1], client[2]):
                 self.Encryption.send_encrypted_msg(f"{client_name} already registered".encode('utf-8'))
                 registered = True
         if not registered:
             Database.update_clients_database(client_name, client_password)
             self.Encryption.send_encrypted_msg(f"Registered as {client_name}".encode('utf-8'))
 
-    def assign_client(self, message, client_socket):
-        client_name, client_password = message.split()[1:3]
-        clients = Database.get_clints_database()
+    def assign_client(self, message):
+        try:
+            client_name, client_password = message.split()[1:3]
+        except ValueError:
+            self.Encryption.send_encrypted_msg("Invalid format. Use ASSIGN <username> <password>".encode('utf-8'))
+            return
+        clients = Database.get_clients_database()
         for client in clients:
-            if (client_name, client_password) == (client[1], client[2]):
-                client_socket.send("Connection APPROVED".encode('utf-8'))
-                test_mfcc = self.prot.get_msg()[1].decode('utf-8')
-                if test_mfcc is not None:
-                    recognized_song, Is_Dominant = recognize_song(test_mfcc)
-                    msg = f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}'.encode("utf-8")
-                    msg = self.prot.create_msg(msg)
-                    client_socket.send(msg)
-                else:
-                    client_socket.send("Error processing audio sample".encode("utf-8"))
-            else:
-                client_socket.send("Connection DENIED".encode('utf-8'))
+            if (client_name, hashlib.md5(client_password.encode()).hexdigest()) == (client[1], client[2]):
+                self.Encryption.send_encrypted_msg("Connection APPROVED".encode('utf-8'))
+                return
+
+    def calculate_sample(self, test_mfcc):
+        if test_mfcc is not None:
+            recognized_song, distances, Is_Dominant = recognize_song(test_mfcc)
+            self.Encryption.send_encrypted_msg(f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}\nThe distances are: {distances}'.encode("utf-8"))
+        else:
+            self.Encryption.send_encrypted_msg("Error processing audio sample".encode("utf-8"))
 
 
 # A function only for test.

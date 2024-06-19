@@ -135,6 +135,8 @@ class Client:
             return None
 
     def assign(self, filename="Recorded.wav"):
+        # self.Encryption.send_encrypted_msg(f"ASSIGN {self.username} {self.password}".encode('utf-8'))
+        # msg = self.Encryption.decrypt(self.prot.get_msg()[1])
         sample_mfcc = self.extract_mfcc(filename)
         msg = sample_mfcc.encode('utf-8')
         self.Encryption.send_encrypted_msg(msg)
@@ -236,7 +238,6 @@ class Client:
                 self.register_window.title("Processing")
                 tk.Label(self.register_window, text="Processing...", font=("Helvetica", 16)).pack(pady=20)
                 self.root.update()  # Force update to show the processing label
-
                 self.songs, self.distances = self.assign(self.selected_file)
 
                 # Display results after assignment
@@ -271,8 +272,8 @@ class Client:
                   font=("Helvetica", 14)).pack(pady=10)
 
     def display_initial_options(self):
-        self.Encryption.send_encrypted_msg(f"ASSIGN {'Client1'} {'678'}".encode('utf-8'))
-        response = self.Encryption.decrypt(self.prot.get_msg()[1])
+        # self.Encryption.send_encrypted_msg(f"ASSIGN {'Client1'} {'678'}".encode('utf-8'))
+        # response = self.Encryption.decrypt(self.prot.get_msg()[1])
         # Clear existing widgets in root (main window)
         for widget in self.register_window.winfo_children():
             widget.destroy()
@@ -394,6 +395,7 @@ class Client:
 
         # Set the position of the window to the center of the screen
         root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+
 
 def main():
     g = Client()
