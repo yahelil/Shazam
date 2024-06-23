@@ -2,14 +2,12 @@ import socket
 import threading
 import numpy as np
 from scipy.spatial.distance import euclidean
-from protocol import Protocol
 from Database import *
 from Encryption import Encryption
 import hashlib
 
-SERVER_HOST = '127.0.0.1'
-SERVER_PORT = 65433
-database = {}
+SERVER_HOST = '10.0.0.3'
+SERVER_PORT = 65434
 
 
 # This function is originally for the client but I added it in the server for tests only
@@ -51,7 +49,6 @@ def recognize_song(test_mfcc):
 
     Args:
         test_mfcc (np.ndarray): MFCC feature vector of the test audio.
-        database (dict): A dictionary where keys are song names and values are MFCC feature vectors of known songs.
 
     Returns:
         tuple: The recognized song or top matches, and a boolean indicating if the match is dominant.
@@ -98,8 +95,7 @@ class Server:
 
     def __init__(self):
         self.server_socket = None
-        self.prot = None
-        self.Encryption = None
+        self.Encryption = {}  # dictionary: "socket: Encryption(socket)"
 
     @staticmethod
     def combine_funcs(*funcs):
@@ -119,7 +115,6 @@ class Server:
             while True:
                 client_socket, client_address = self.server_socket.accept()
                 print(f"Accepted new connection from {client_address}")
-                self.prot = Protocol(client_socket)
                 client_handler = threading.Thread(target=self.combine_funcs(self.encryption, self.handle_client), args=(client_socket, client_address))
                 client_handler.start()
         except KeyboardInterrupt:
@@ -127,74 +122,74 @@ class Server:
         finally:
             self.server_socket.close()
 
-    def encryption(self, client_socket, adress):
-        self.Encryption = Encryption(client_socket)
-        self.Encryption.create_keys()
-        self.Encryption.send_key()
-        self.Encryption.receive_public_key()
-        self.Encryption.create_box()
+    def encryption(self, client_socket, a):
+        self.Encryption[client_socket] = Encryption(client_socket)
+        self.Encryption[client_socket].create_keys()
+        self.Encryption[client_socket].send_key()
+        self.Encryption[client_socket].receive_public_key()
+        self.Encryption[client_socket].create_box()
 
     def handle_client(self, client_socket, client_address):
         print(f"New connection: {client_address}")
         try:
             while True:
-                message = self.prot.get_msg()[1]
-                if not message:
+                message = self.Encryption[client_socket].decrypt()
+                if message == "Failed To Decrypt":
                     break
-                message = self.Encryption.decrypt(message)
-                self.process_message(message)
+                self.process_message(client_socket, message)
         except ConnectionAbortedError:
             print(f"{client_address} disconnected")
         finally:
             print(f"Connection closed: {client_address}")
+            self.Encryption.pop(client_socket)
             client_socket.close()
 
-    def process_message(self, message):
+    def process_message(self, client_socket, message):
         if message.startswith('REGISTER'):
-            self.register_client(message)
+            self.register_client(client_socket, message)
         elif message.startswith('ASSIGN'):
-            self.assign_client(message)
+            self.assign_client(client_socket, message)
         else:
-            self.calculate_sample(message)
+            self.calculate_sample(client_socket, message)
 
-    def register_client(self, message):
+    def register_client(self, client_socket, message):
         try:
             _, client_name, client_password = message.split()
         except ValueError:
-            self.Encryption.send_encrypted_msg("Invalid format. Use REGISTER <username> <password>".encode('utf-8'))
+            self.Encryption[client_socket].send_encrypted_msg("Invalid format. Use REGISTER <username> <password>".encode('utf-8'))
             return
         if not client_name or not client_password:
-            self.Encryption.send_encrypted_msg("Username and password cannot be empty".encode('utf-8'))
+            self.Encryption[client_socket].send_encrypted_msg("Username and password cannot be empty".encode('utf-8'))
             return
         clients = Database.get_clients_database()
         registered = False
         for client in clients:
             print(f"{client[1] =}, {client[2] =}")
             if (client_name, hashlib.md5(client_password.encode()).hexdigest()) == (client[1], client[2]):
-                self.Encryption.send_encrypted_msg(f"{client_name} already registered".encode('utf-8'))
+                self.Encryption[client_socket].send_encrypted_msg(f"{client_name} already registered".encode('utf-8'))
                 registered = True
         if not registered:
             Database.update_clients_database(client_name, client_password)
-            self.Encryption.send_encrypted_msg(f"Registered as {client_name}".encode('utf-8'))
+            self.Encryption[client_socket].send_encrypted_msg(f"Registered as {client_name}".encode('utf-8'))
 
-    def assign_client(self, message):
+    def assign_client(self, client_socket, message):
         try:
             client_name, client_password = message.split()[1:3]
         except ValueError:
-            self.Encryption.send_encrypted_msg("Invalid format. Use ASSIGN <username> <password>".encode('utf-8'))
+            self.Encryption[client_socket].send_encrypted_msg("Invalid format. Use ASSIGN <username> <password>".encode('utf-8'))
             return
         clients = Database.get_clients_database()
         for client in clients:
             if (client_name, hashlib.md5(client_password.encode()).hexdigest()) == (client[1], client[2]):
-                self.Encryption.send_encrypted_msg("Connection APPROVED".encode('utf-8'))
+                self.Encryption[client_socket].send_encrypted_msg("Connection APPROVED".encode('utf-8'))
                 return
 
-    def calculate_sample(self, test_mfcc):
+    def calculate_sample(self, client_socket, test_mfcc):
         if test_mfcc is not None:
             recognized_song, distances, Is_Dominant = recognize_song(test_mfcc)
-            self.Encryption.send_encrypted_msg(f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}\nThe distances are: {distances}'.encode("utf-8"))
+            self.Encryption[client_socket].send_encrypted_msg(f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}\nThe distances are: {distances}'.encode("utf-8"))
         else:
-            self.Encryption.send_encrypted_msg("Error processing audio sample".encode("utf-8"))
+            self.Encryption[client_socket].send_encrypted_msg("Error processing audio sample".encode("utf-8"))
 
 
 # A function only for test.

@@ -1,5 +1,4 @@
 import socket
-import sys
 import numpy as np
 import pyaudio
 import wave
@@ -7,24 +6,26 @@ import librosa
 from ast import literal_eval
 import tkinter as tk
 from PIL import Image, ImageTk
-from protocol import Protocol
 from Encryption import Encryption as Encrypt
 from tkinter import filedialog, messagebox
 
 # Define server address and port
 SERVER_HOST = '127.0.0.1'
-SERVER_PORT = 65433
+SERVER_PORT = 65434
 
 
 class Client:
     def __init__(self):
+        self.fill_label = None
+        self.bottom_frame = None
+        self.top_frame = None
         self.username = None
         self.password = None
         self.selected_file = None
         self.button_clicked = None
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.connect((SERVER_HOST, SERVER_PORT))
-        self.prot = Protocol(self.client_socket)
+        print("connected to server")
         self.root = None
         self.register_window = None
         self.username_entry = None
@@ -50,14 +51,14 @@ class Client:
         self.Encryption.send_encrypted_msg(f"REGISTER {client_name} {password}".encode('utf-8'))
 
         # Receive server response
-        response = self.Encryption.decrypt(self.prot.get_msg()[1])
+        response = self.Encryption.decrypt()
         print(f"Server response: {response}")
         if response == "Invalid format. Use REGISTER <username> <password>":
             return "Invalid format. Use REGISTER <username> <password>"
         return "Registered" if response.startswith("Registered") or response.startswith(client_name) else "Failed"
 
     @staticmethod
-    def record_audio(filename="Recorded.wav", record_seconds=2, sample_rate=44100, chunk_size=1024, channels=1):
+    def record_audio(filename="Recorded.wav", record_seconds=5, sample_rate=44100, chunk_size=1024, channels=1):
         audio = pyaudio.PyAudio()
 
         # Open stream
@@ -136,11 +137,11 @@ class Client:
 
     def assign(self, filename="Recorded.wav"):
         # self.Encryption.send_encrypted_msg(f"ASSIGN {self.username} {self.password}".encode('utf-8'))
-        # msg = self.Encryption.decrypt(self.prot.get_msg()[1])
+        # msg = self.Encryption.decrypt()
         sample_mfcc = self.extract_mfcc(filename)
         msg = sample_mfcc.encode('utf-8')
         self.Encryption.send_encrypted_msg(msg)
-        msg = self.Encryption.decrypt(self.prot.get_msg()[1])
+        msg = self.Encryption.decrypt()
         print(msg)
         three_part_msg = msg.split("\n")
         Is_Dominant = three_part_msg[0].split()[1] != "False"
@@ -163,19 +164,19 @@ class Client:
     def on_register(self):
         self.get_info(False)
         Did_succeed = self.register(self.username, self.password)
-        register_window = tk.Toplevel(self.root)  # Create a new window
-        register_window.title("Registration Confirmation")
-        self.center_window(register_window, 140, 100)
+        print(f"{Did_succeed =}")
         if Did_succeed == "Registered":
+            if self.fill_label:
+                self.fill_label.pack_forget()
+            register_window = tk.Toplevel(self.root)  # Create a new window
+            register_window.title("Registration Confirmation")
+            self.center_window(register_window, 150, 110)
             # Create label and button in the new window
             tk.Label(register_window, text="You are registered!!").pack(pady=10)
             tk.Button(register_window, text="OK", command=register_window.destroy).pack(pady=10)
-        else:
-            # Create label and button in the new window
-            tk.Label(register_window, text="You can't be registered :(").pack(pady=10)
-
-            tk.Button(register_window, text="OK", command=self.combine_funcs(self.close_connection, self.root.destroy)).pack(pady=10)
-            tk.Button(register_window, text="Try Again", command=self.combine_funcs(register_window.destroy)).pack(pady=10)
+        if Did_succeed.startswith("Invalid"):
+            self.fill_label = tk.Label(self.top_frame, text="***Please fill both the username and the password!!***", font=("Helvetica", 14))
+            self.fill_label.pack()
 
     def get_info(self, assign=True):
         self.username = self.username_entry.get()
@@ -187,7 +188,7 @@ class Client:
         self.Encryption.send_encrypted_msg(f"ASSIGN {self.username} {self.password}".encode('utf-8'))
         #self.Encryption.send_encrypted_msg(f"ASSIGN {'Client1'} {'678'}".encode('utf-8'))
 
-        response = self.Encryption.decrypt(self.prot.get_msg()[1])
+        response = self.Encryption.decrypt()
         print(f"Server response: {response}")
 
         if response == "Connection APPROVED":
@@ -273,7 +274,7 @@ class Client:
 
     def display_initial_options(self):
         # self.Encryption.send_encrypted_msg(f"ASSIGN {'Client1'} {'678'}".encode('utf-8'))
-        # response = self.Encryption.decrypt(self.prot.get_msg()[1])
+        # response = self.Encryption.decrypt()
         # Clear existing widgets in root (main window)
         for widget in self.register_window.winfo_children():
             widget.destroy()
@@ -338,49 +339,68 @@ class Client:
 
         self.center_window(self.root)
 
-        f1 = tk.Frame(self.root, padx=5, pady=5)
-        f1.pack(side=tk.TOP)
-        f2 = tk.Frame(self.root, padx=5, pady=5)
-        f2.pack(side=tk.TOP)
-        f3 = tk.Frame(self.root, padx=5, pady=5)
-        f3.pack(side=tk.TOP)
-        f4 = tk.Frame(self.root, padx=5, pady=5)
-        f4.pack(side=tk.TOP)
-        # Create and place labels and entry fields
-        tk.Label(f1, text="Username", font=("Helvetica", 20)).pack(side=tk.LEFT,)
-        self.username_entry = tk.Entry(f1, font=("Helvetica", 20))
-        self.username_entry.pack(side=tk.LEFT)
+        # Frame to hold username and password
+        self.top_frame = tk.Frame(self.root)
+        self.top_frame.pack(pady=10)
 
-        tk.Label(f2, text="Password", font=("Helvetica", 20)).pack(side=tk.LEFT)
-        self.password_entry = tk.Entry(f2, show="*", font=("Helvetica", 20))
-        self.password_entry.pack(side=tk.LEFT)
+        # Username
+        username_frame = tk.Frame(self.top_frame)
+        username_frame.pack()
+        tk.Label(username_frame, text="Username", font=("Helvetica", 20)).pack(side=tk.LEFT)
+        self.username_entry = tk.Entry(username_frame, font=("Helvetica", 20))
+        self.username_entry.pack(side=tk.LEFT, padx=10, pady=5)
+
+        # Password
+        password_frame = tk.Frame(self.top_frame)
+        password_frame.pack()
+        tk.Label(password_frame, text="Password", font=("Helvetica", 20)).pack(side=tk.LEFT)
+        self.password_entry = tk.Entry(password_frame, show="*", font=("Helvetica", 20))
+        self.password_entry.pack(side=tk.LEFT, padx=10, pady=5)
+
+        # Adding new label after username and password entries
+        self.new_label = tk.Label(self.root, text="***Please fill both the username and the password!!***",
+                                  font=("Helvetica", 20))
+        #self.new_label.pack(pady=10)
+
+        # Frame to hold sign up and sign in buttons
+        self.middle_frame = tk.Frame(self.root)
+        self.middle_frame.pack()
 
         image = Image.open("guiimages/sign-up.png")
-        image = image.resize((150,100), resample=Image.BICUBIC)
+        image = image.resize((150, 105), resample=Image.BICUBIC)
         sign_up_image = ImageTk.PhotoImage(image)
+
         image = Image.open("guiimages/sign-in.png")
-        image = image.resize((150,100), resample=Image.BICUBIC)
+        image = image.resize((150, 105), resample=Image.BICUBIC)
         sign_in_image = ImageTk.PhotoImage(image)
+
+        # Create and place the buttons
+        register_button = tk.Button(self.middle_frame, text="Sign up", image=sign_up_image,
+                                    command=self.combine_funcs(self.on_register), pady=10)
+        register_button.pack(side=tk.LEFT, padx=25, pady=10)
+
+        assign_button = tk.Button(self.middle_frame, text="Sign in", image=sign_in_image,
+                                  command=self.combine_funcs(self.get_info, self.root.withdraw), padx=10, pady=10)
+        assign_button.pack(side=tk.LEFT, padx=25, pady=10)
+
+        # Frame to hold the exit button
+        self.bottom_frame = tk.Frame(self.root)
+        self.bottom_frame.pack(pady=5)
+
         image = Image.open("guiimages/exit.png")
         image = image.resize((95, 75), resample=Image.BICUBIC)
         exit_image = ImageTk.PhotoImage(image)
 
-        # Create and place the buttons
-
-        register_button = tk.Button(f3, text="Sign up", image=sign_up_image, command=self.combine_funcs(self.on_register), pady=10)
-        register_button.pack(side=tk.LEFT, padx=25, pady=20)
-
-        assign_button = tk.Button(f3, text="Sign in", image=sign_in_image, command=self.combine_funcs(self.get_info, self.root.withdraw), padx=10, pady=10)
-        assign_button.pack(side=tk.LEFT, padx=25, pady=20)
-
-        exit_button = tk.Button(f4, text="Exit", image=exit_image, command=self.combine_funcs(self.root.destroy, self.close_connection), font=("Helvetica", 14))
+        exit_button = tk.Button(self.bottom_frame, text="Exit", image=exit_image,
+                                command=self.combine_funcs(self.root.destroy, self.close_connection),
+                                font=("Helvetica", 14))
         exit_button.pack(pady=10)
 
         # Run the main event loop
         self.root.mainloop()
         self.close_connection()
 
-    def center_window(self, root, window_width=500, window_height=370):
+    def center_window(self, root, window_width=500, window_height=395):
         # Set window size
         window_width = window_width
         window_height = window_height
