@@ -25,7 +25,10 @@ class Encryption:
         self.private_key_bytes = bytes(self.private_key)
         self.public_key_bytes = bytes(self.public_key)
 
-    def decrypt(self, encrypted_message):
+    def decrypt(self):
+        encrypted_message = self.prot.get_msg()[1]
+        if not encrypted_message:
+            return "Failed To Decrypt"
         # Ensure receiver_public_key is set before decryption
         if not self.receiver_public_key:
             raise ValueError("Receiver public key not set.")
