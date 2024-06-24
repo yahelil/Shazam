@@ -38,7 +38,7 @@ class Database:
         return None
 
     @staticmethod
-    def get_clints_database():
+    def get_clients_database():
       # Connect to the MySQL server
       mydb = mysql.connector.connect(
         host="localhost",
@@ -187,9 +187,9 @@ class Database:
       # Insert data into the mfcc_songs_db table
       sql = "INSERT INTO mfcc_songs_db (song_name, mfcc_data) VALUES (%s, %s)"
       val = []
-      for i in range(0, 360, 5):
+      for i in range(0, 300, 5):
         val.append(
-          (f'BlindingLights_{i}_{i + 5}', self.extract_mfcc(f'SplitBlindingLights/BlindingLights{i}_{i + 5}.wav')), )
+          (f'Story_{i}_{i + 5}', self.extract_mfcc(f'SplitStory/Story{i}_{i + 5}.wav')), )
 
       try:
         # Execute the SQL command for each row of data
@@ -366,10 +366,13 @@ class Database:
         # Close the cursor and connection
         mycursor.close()
         mydb.close()
+        mydb.close()
 
 
-#Database.delete_client("Elior")
-#Database.delete_song_mfcc('FireToTheRain')
+#Database.delete_client('"bhm')
+# for i in range(195, 240, 5):
+#   Database.delete_song_mfcc(f'BlindingLights_{i}_{i+5}')
 #Database.renumber_ids()
 # g = Database()
 # g.insert_mfcc_songs_db()
+# Database.delete_duplicates()
