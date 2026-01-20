@@ -12,8 +12,6 @@ def extract_mfcc(file_path, n_mfcc=13):
 
         mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
 
-        mfccs_mean = np.mean(mfccs.T, axis=0)
-
         mfccs_var = np.var(mfccs.T, axis=0)
 
         return json.dumps(mfccs_var.tolist())

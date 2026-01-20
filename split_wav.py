@@ -1,29 +1,7 @@
 import os
 from tkinter import filedialog
-import json
-import librosa
 from pydub import AudioSegment
-import numpy as np
-
-
-def extract_mfcc(file_path, n_mfcc=13):
-    """
-    Extracts MFCC features from an audio file.
-    """
-    try:
-        # Load the audio file
-        y, sr = librosa.load(file_path, sr=None)
-
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
-
-        mfccs_var = np.var(mfccs.T, axis=0)
-
-        return json.dumps(mfccs_var.tolist())
-
-    except Exception as e:
-        # Handle any exceptions that occur during file loading or feature extraction
-        print(f"Error loading file {file_path}: {e}")
-        return None
+from AudioUtils import extract_mfcc
 
 
 def split_wav(selected_file, mode):
@@ -52,7 +30,6 @@ def split_wav(selected_file, mode):
         if mode == "Export":
             pass
         else:
-            # In database mode, we extract data from the newly saved file
             mfcc_data = extract_mfcc(split_filepath)
 
             # Append the data if extraction was successful
