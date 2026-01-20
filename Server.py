@@ -1,7 +1,9 @@
 import socket
 import threading
-import numpy as np
+
 from scipy.spatial.distance import euclidean
+
+from AudioUtils import extract_mfcc
 from Database import *
 from Encryption import Encryption
 import hashlib
@@ -9,49 +11,9 @@ import hashlib
 SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 2487
 
-
-# This function is originally for the client but I added it in the server for tests only
-def extract_mfcc(file_path, n_mfcc=13):
-    """
-    Extracts MFCC features from an audio file.
-
-    Args:
-        file_path (str): Path to the audio file.
-        n_mfcc (int): Number of MFCC coefficients to extract.
-
-    Returns:
-        np.ndarray: Concatenated mean and variance of the MFCC features, or None if an error occurs.
-    """
-    try:
-        # Load the audio file
-        y, sr = librosa.load(file_path, sr=None)
-
-        # Extract MFCC features from the audio
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
-
-        # Calculate the mean of the MFCC features (excluding the first coefficient)
-        mfccs_mean = np.mean(mfccs.T, axis=0)
-
-        # Calculate the variance of the MFCC features (excluding the first coefficient)
-        mfccs_var = np.var(mfccs.T, axis=0)
-
-        return str(mfccs_var)
-
-    except Exception as e:
-        # Handle any exceptions that occur during file loading or feature extraction
-        print(f"Error loading file {file_path}: {e}")
-        return None
-
-
 def recognize_song(test_mfcc):
     """
     Recognizes a song by comparing the MFCC features of the test audio to the database.
-
-    Args:
-        test_mfcc (np.ndarray): MFCC feature vector of the test audio.
-
-    Returns:
-        tuple: The recognized song or top matches, and a boolean indicating if the match is dominant.
     """
     database = Database.create_database()
 
@@ -79,7 +41,7 @@ def recognize_song(test_mfcc):
                 top_3_distances.append(distance)
                 top_3_matches.append(name.split('_')[0])
                 prev_name_list.append(name.split('_')[0])
-        # Determine whether the recognized song is dominant
+
         if top_3_distances[1] == 0:
             ratio = 0
         else:
@@ -87,10 +49,8 @@ def recognize_song(test_mfcc):
         Is_Dominant = ratio < 0.5
         return (top_3_matches[0], top_3_distances[0], Is_Dominant) if Is_Dominant else (top_3_matches[:3], top_3_distances[:3], Is_Dominant)
     except Exception as e:
-        # Handle any exceptions that occur during the recognition process
         print(f"Error recognizing song: {e}")
         return None, None, False
-
 
 class Server:
 
@@ -191,25 +151,6 @@ class Server:
             self.Encryption[client_socket].send_encrypted_msg(f'Is_Dominant: {Is_Dominant}\nThe recognized song is: {recognized_song}\nThe distances are: {distances}'.encode("utf-8"))
         else:
             self.Encryption[client_socket].send_encrypted_msg("Error processing audio sample".encode("utf-8"))
-
-
-# A function only for test.
-# I only run it when I need to test results quick
-def test():
-    print("The sampled song is : FireToTheRain_eli1.wav")
-    test_mfcc = extract_mfcc('MoreWavs/sample1_fireToTheRain.wav')
-    recognized_song = recognize_song(test_mfcc)
-    print(f'The recognized song is: {recognized_song}\n')
-
-    print("The sampled song is : FireToTheRain_eli2.wav")
-    test_mfcc = extract_mfcc('MoreWavs/sample2_fireToTheRainNormalized.wav')
-    recognized_song = recognize_song(test_mfcc)
-    print(f'The recognized song is: {recognized_song}\n')
-
-    print("The sampled song is : FireToTheRain_eli3.wav")
-    test_mfcc = extract_mfcc('MoreWavs/sample3_fireToTheRain.wav')
-    recognized_song = recognize_song(test_mfcc)
-    print(f'The recognized song is: {recognized_song}\n')
 
 if __name__ == "__main__":
     s = Server()

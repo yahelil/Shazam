@@ -1,422 +1,149 @@
 from tkinter import filedialog
 from split_wav import split_wav
-import librosa
 import mysql.connector
 import numpy as np
-import hashlib
 import json
+from AudioUtils import extract_mfcc
 
 
 class Database:
+    DB_CONFIG = {
+      "host": "localhost",
+      "user": "root",
+      "password": "yaheli11",
+      "database": "mydatabase"
+    }
+
     @staticmethod
-    def extract_mfcc(file_path, n_mfcc=13):
-      """
-      Extracts MFCC features from an audio file.
-
-      Args:
-          file_path (str): Path to the audio file.
-          n_mfcc (int): Number of MFCC coefficients to extract.
-
-      Returns:
-          np.ndarray: Concatenated mean and variance of the MFCC features, or None if an error occurs.
-      """
-      try:
-        # Load the audio file
-        y, sr = librosa.load(file_path, sr=None)
-
-        # Extract MFCC features from the audio
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
-
-        # Calculate the mean of the MFCC features (excluding the first coefficient)
-        mfccs_mean = np.mean(mfccs.T, axis=0)
-
-        # Calculate the variance of the MFCC features (excluding the first coefficient)
-        mfccs_var = np.var(mfccs.T, axis=0)
-
-        return str(mfccs_var)
-
-      except Exception as e:
-        # Handle any exceptions that occur during file loading or feature extraction
-        print(f"Error loading file {file_path}: {e}")
-        return None
+    def _get_connection():
+      return mysql.connector.connect(**Database.DB_CONFIG)
 
     @staticmethod
     def get_clients_database():
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
-
-      mycursor = mydb.cursor()
-
-      # Select all data from the Clients table
-      mycursor.execute("SELECT * FROM Clients")
-
-      # Fetch all rows from the executed query
-      result = mycursor.fetchall()
-      # Print each row
-      return result
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          cursor.execute("SELECT * FROM Clients")
+          return cursor.fetchall()
 
     @staticmethod
     def delete_client(username):
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          cursor.execute("SELECT COUNT(*) FROM Clients WHERE username = %s", (username,))
+          if cursor.fetchone()[0] > 0:
+            cursor.execute("DELETE FROM Clients WHERE username = %s", (username,))
+            print(f"{cursor.rowcount} record(s) deleted.")
+          else:
+            print("Username not found.")
+          mydb.commit()
 
-      mycursor = mydb.cursor()
-
-      try:
-        # Check if the username exists
-        mycursor.execute("SELECT COUNT(*) FROM Clients WHERE username = %s", (username,))
-        result = mycursor.fetchone()
-
-        if result[0] > 0:
-          # Delete the user with the given username
-          sql = "DELETE FROM Clients WHERE username = %s"
-          mycursor.execute(sql, (username,))
-          print(f"{mycursor.rowcount} record(s) deleted.")
-        else:
-          print("Username not found. No deletion performed.")
-
-        # Commit the transaction
-        mydb.commit()
-
-        # Fetch all data from the Clients table to verify the deletion
-        mycursor.execute("SELECT * FROM Clients")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-          print(row)
-
-      except mysql.connector.Error as error:
-        print("Error:", error)
-
-      finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
-
-
-    @staticmethod
     def update_clients_database(username, password):
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
+      import hashlib
 
-      mycursor = mydb.cursor()
-
-      try:
-        # Check if the username exists
-        mycursor.execute("SELECT COUNT(*) FROM Clients WHERE username = %s", (username,))
-        result = mycursor.fetchone()
-
-        if result[0] == 0:
-          # Insert the new username and password
-          sql = "INSERT INTO Clients (username, password) VALUES (%s, %s)"
-          md5_password = hashlib.md5(password.encode()).hexdigest()
-          val = (username, md5_password)
-          mycursor.execute(sql, val)
-          print(f"{mycursor.rowcount} record(s) inserted.")
-        else:
-          print("Username already exists. No insertion performed.")
-
-        # Commit the transaction
-        mydb.commit()
-
-        # Fetch all data from the Clients table to verify the update
-        mycursor.execute("SELECT * FROM Clients")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-          print(row)
-
-      except mysql.connector.Error as error:
-        print("Error:", error)
-
-      finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          cursor.execute("SELECT COUNT(*) FROM Clients WHERE username = %s", (username,))
+          if cursor.fetchone()[0] == 0:
+            md5_pass = hashlib.md5(password.encode()).hexdigest()
+            cursor.execute("INSERT INTO Clients (username, password) VALUES (%s, %s)",(username, md5_pass))
+            print(f"{cursor.rowcount} record(s) inserted.")
+          else:
+            print("Username already exists.")
+          mydb.commit()
 
     @staticmethod
     def create_database():
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
-
-      mycursor = mydb.cursor()
-
-      mycursor.execute("SELECT * FROM mfcc_songs_db")
-      result = mycursor.fetchall()
       database = {}
-      for row in result:
-        database[row[1]] = np.array(json.loads(row[2]))
-
-      mycursor.close()
-      mydb.close()
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          cursor.execute("SELECT * FROM mfcc_songs_db")
+          results = cursor.fetchall()
+          for row in results:
+            # row[1] is song_name, row[2] is data
+            database[row[1]] = np.array(json.loads(row[2]))
       return database
 
     def add_database_song(self):
-      self.selected_file = filedialog.askopenfilename(title="Select a prerecorded audio file",
-                                                    filetypes=(("WAV Files", "*.wav"), ("All Files", "*.*")))
-      self.splits = split_wav(self.selected_file, "database")
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
+      selected_file = filedialog.askopenfilename(
+        title="Select a prerecorded audio file",
+        filetypes=(("WAV Files", "*.wav"), ("All Files", "*.*"))
       )
+      if not selected_file:
+        return
+      splits = split_wav(selected_file, "database")
 
-      mycursor = mydb.cursor()
-
-      # Insert data into the mfcc_songs_db table
-      sql = "INSERT INTO mfcc_songs_db (song_name, mfcc_data) VALUES (%s, %s)"
-      val = self.splits
-      a=12
-      try:
-        # Execute the SQL command for each row of data
-        for v in val:
-          mycursor.execute(sql, v)
-
-        # Commit the transaction
-        mydb.commit()
-
-        print(mycursor.rowcount, "record(s) inserted.")
-
-        # Fetch all data from the `mfcc_songs_db` table to verify the insertion
-        mycursor.execute("SELECT * FROM mfcc_songs_db")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-          print(row)
-
-      except mysql.connector.Error as error:
-        print("Error:", error)
-
-      finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          sql = "INSERT INTO mfcc_songs_db (song_name, mfcc_data) VALUES (%s, %s)"
+          cursor.executemany(sql, splits)
+          mydb.commit()
+          print(f"{cursor.rowcount} record(s) inserted.")
 
     def insert_mfcc_songs_db(self):
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
-
-      mycursor = mydb.cursor()
-
-      # Insert data into the mfcc_songs_db table
-      sql = "INSERT INTO mfcc_songs_db (song_name, mfcc_data) VALUES (%s, %s)"
       val = []
       for i in range(0, 300, 5):
-        val.append(
-          (f'SpaceSong_{i}_{i + 5}', self.extract_mfcc(f'SplitSpaceSong/Space{i}_{i + 5}.wav')), )
-      a=2
-      try:
-        # Execute the SQL command for each row of data
-        for v in val:
-          mycursor.execute(sql, v)
+        filename = f'SplitSpaceSong/Space{i}_{i + 5}.wav'
+        song_name = f'SpaceSong_{i}_{i + 5}'
+        mfcc_data = extract_mfcc(filename)
 
-        # Commit the transaction
-        mydb.commit()
+        if mfcc_data:
+          val.append((song_name, mfcc_data))
 
-        print(mycursor.rowcount, "record(s) inserted.")
+      if not val:
+        print("No valid MFCC data found to insert.")
+        return
 
-        # Fetch all data from the `mfcc_songs_db` table to verify the insertion
-        mycursor.execute("SELECT * FROM mfcc_songs_db")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-          print(row)
-
-      except mysql.connector.Error as error:
-        print("Error:", error)
-
-      finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          sql = "INSERT INTO mfcc_songs_db (song_name, mfcc_data) VALUES (%s, %s)"
+          cursor.executemany(sql, val)
+          mydb.commit()
+          print(f"{cursor.rowcount} record(s) inserted.")
 
     @staticmethod
     def delete_song_mfcc(song_name):
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
-
-      mycursor = mydb.cursor()
-
-      try:
-        # Check if the song name exists
-        mycursor.execute("SELECT COUNT(*) FROM mfcc_songs_db WHERE song_name = %s", (song_name,))
-        result = mycursor.fetchone()
-
-        if result[0] > 0:
-          # Delete the song with the given song name
-          sql = "DELETE FROM mfcc_songs_db WHERE song_name = %s"
-          mycursor.execute(sql, (song_name,))
-          print(f"{mycursor.rowcount} record(s) deleted.")
-        else:
-          print("Song name not found. No deletion performed.")
-
-        # Commit the transaction
-        mydb.commit()
-
-        # Fetch all data from the mfcc_songs_db table to verify the deletion
-        mycursor.execute("SELECT * FROM mfcc_songs_db")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-          print(row)
-
-      except mysql.connector.Error as error:
-        print("Error:", error)
-
-      finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          cursor.execute("SELECT COUNT(*) FROM mfcc_songs_db WHERE song_name = %s", (song_name,))
+          if cursor.fetchone()[0] > 0:
+            cursor.execute("DELETE FROM mfcc_songs_db WHERE song_name = %s", (song_name,))
+            print(f"{cursor.rowcount} record(s) deleted.")
+          else:
+            print("Song name not found.")
+          mydb.commit()
 
     @staticmethod
     def delete_duplicates():
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          cursor.execute("""SELECT song_name, COUNT(*) FROM mfcc_songs_db GROUP BY song_name HAVING COUNT(*) > 1""")
+          duplicates = cursor.fetchall()
+          deleted_total = 0
+          for song_name, count in duplicates:
+            limit = count - 1
+            cursor.execute("DELETE FROM mfcc_songs_db WHERE song_name = %s LIMIT %s",(song_name, limit))
+            deleted_total += cursor.rowcount
 
-      mycursor = mydb.cursor()
-
-      try:
-        # Find all duplicate song names
-        find_duplicates_query = """
-                      SELECT song_name, COUNT(*)
-                      FROM mfcc_songs_db
-                      GROUP BY song_name
-                      HAVING COUNT(*) > 1;
-                  """
-        mycursor.execute(find_duplicates_query)
-        duplicates = mycursor.fetchall()
-
-        for song_name, count in duplicates:
-          # Keep one record and delete the others
-          delete_duplicates_query = """
-                          DELETE FROM mfcc_songs_db
-                          WHERE song_name = %s
-                          LIMIT %s;
-                      """
-          # Delete (count - 1) records for each duplicate song_name
-          mycursor.execute(delete_duplicates_query, (song_name, count - 1))
-
-        # Commit the transaction
-        mydb.commit()
-
-        print(f"Deleted {mycursor.rowcount} duplicate record(s).")
-
-        # Fetch all data from the mfcc_songs_db table to verify the deletions
-        mycursor.execute("SELECT * FROM mfcc_songs_db")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-          print(row)
-
-      except mysql.connector.Error as error:
-        print("Error:", error)
-
-      finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
+          mydb.commit()
+          print(f"Deleted {deleted_total} duplicate record(s).")
 
     @staticmethod
     def renumber_ids():
-      # Connect to the MySQL server
-      mydb = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="yaheli11",
-        database="mydatabase"
-      )
+      with Database._get_connection() as mydb:
+        with mydb.cursor() as cursor:
+          try:
+            cursor.execute("CREATE TABLE temp_table LIKE mfcc_songs_db")
 
-      mycursor = mydb.cursor()
-
-      try:
-        # Create a temporary table with the same structure but with a new auto-incremented ID column
-        mycursor.execute("""
-                    CREATE TABLE temp_table LIKE mfcc_songs_db
-                """)
-
-        # Insert data from the original table into the temporary table
-        mycursor.execute("""
-                    INSERT INTO temp_table (song_name, mfcc_data)
-                    SELECT song_name, mfcc_data
-                    FROM mfcc_songs_db
-                """)
-
-        # Drop the original table
-        mycursor.execute("DROP TABLE mfcc_songs_db")
-
-        # Rename the temporary table to the original table name
-        mycursor.execute("RENAME TABLE temp_table TO mfcc_songs_db")
-
-        print("IDs renumbered successfully.")
-
-        # Commit the transaction
-        mydb.commit()
-
-        # Fetch all data from the updated mfcc_songs_db table to verify the changes
-        mycursor.execute("SELECT * FROM mfcc_songs_db")
-        result = mycursor.fetchall()
-
-        # Print each row to verify the data
-        for row in result:
-          print(row)
-
-      except mysql.connector.Error as error:
-        print("Error:", error)
-
-      finally:
-        # Close the cursor and connection
-        mycursor.close()
-        mydb.close()
-        mydb.close()
-# g= Database()
-# for i in range(0, 285, 5):
-#   g.delete_song_mfcc(f"TryingMyBest_{i}_{i+5}")
-# g.add_database_song()
+            cursor.execute("""INSERT INTO temp_table (song_name, mfcc_data) SELECT song_name, mfcc_data FROM mfcc_songs_db""")
+            cursor.execute("DROP TABLE mfcc_songs_db")
+            cursor.execute("RENAME TABLE temp_table TO mfcc_songs_db")
+            mydb.commit()
+            print("IDs renumbered successfully.")
+          except mysql.connector.Error as err:
+            print(f"Error renumbering IDs: {err}")
+            mydb.rollback()
 
 if __name__ == "__main__":
     db = Database()
     print("Please select Song")
-    db.add_database_song()  # This opens a file dialog
+    db.add_database_song()
