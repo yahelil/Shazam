@@ -192,7 +192,7 @@ class Client:
 
         button_clicked = tk.StringVar()
 
-        tk.Button(self.register_window, text="Press Here To Record 2 seconds", command=self.handle_record,
+        tk.Button(self.register_window, text="Press Here To Record", command=self.handle_record,
                                   font=("Helvetica", 14)).pack(pady=10)
         tk.Button(self.register_window, text="Or Press Here To Use Prerecorded Sample",
                                      command=self.handle_prerecorded, font=("Helvetica", 14)).pack(pady=10)
